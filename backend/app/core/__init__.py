@@ -1,0 +1,3 @@
+"""
+MINDYARD - Core Module
+"""

@@ -1,0 +1,105 @@
+/**
+ * MINDYARD - Type Definitions
+ */
+
+// User
+export interface User {
+  id: string;
+  email: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  is_active: boolean;
+  is_verified: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Token {
+  access_token: string;
+  token_type: string;
+  user: User;
+}
+
+// Log Intent
+export type LogIntent = 'log' | 'vent' | 'structure';
+
+// Raw Log (Layer 1)
+export interface RawLog {
+  id: string;
+  user_id: string;
+  content: string;
+  content_type: string;
+  intent: LogIntent | null;
+  emotions: string[] | null;
+  emotion_scores: Record<string, number> | null;
+  topics: string[] | null;
+  is_analyzed: boolean;
+  is_processed_for_insight: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RawLogListResponse {
+  items: RawLog[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AckResponse {
+  message: string;
+  log_id: string;
+  timestamp: string;
+}
+
+// Insight Card (Layer 3)
+export type InsightStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected';
+
+export interface InsightCard {
+  id: string;
+  author_id: string;
+  title: string;
+  context: string | null;
+  problem: string | null;
+  solution: string | null;
+  summary: string;
+  topics: string[] | null;
+  tags: string[] | null;
+  sharing_value_score: number;
+  status: InsightStatus;
+  view_count: number;
+  thanks_count: number;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
+}
+
+export interface InsightCardListResponse {
+  items: InsightCard[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface SharingProposal {
+  insight: InsightCard;
+  message: string;
+  original_content_preview: string | null;
+}
+
+// Recommendations
+export interface RecommendationItem {
+  id: string;
+  title: string;
+  summary: string;
+  topics: string[];
+  relevance_score: number;
+  preview: string;
+}
+
+export interface RecommendationResponse {
+  has_recommendations: boolean;
+  recommendations: RecommendationItem[];
+  trigger_reason: string;
+  display_message: string | null;
+}

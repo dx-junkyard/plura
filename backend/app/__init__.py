@@ -1,0 +1,3 @@
+"""
+MINDYARD Backend Application
+"""
