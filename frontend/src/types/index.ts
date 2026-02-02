@@ -23,6 +23,14 @@ export interface Token {
 // Log Intent
 export type LogIntent = 'log' | 'vent' | 'structure';
 
+// Structural Analysis Result
+export interface StructuralAnalysis {
+  relationship_type: 'ADDITIVE' | 'PARALLEL' | 'CORRECTION' | 'NEW';
+  relationship_reason: string;
+  updated_structural_issue: string;
+  probing_question: string;
+}
+
 // Raw Log (Layer 1)
 export interface RawLog {
   id: string;
@@ -33,8 +41,10 @@ export interface RawLog {
   emotions: string[] | null;
   emotion_scores: Record<string, number> | null;
   topics: string[] | null;
+  structural_analysis: StructuralAnalysis | null;
   is_analyzed: boolean;
   is_processed_for_insight: boolean;
+  is_structure_analyzed: boolean;
   created_at: string;
   updated_at: string;
 }

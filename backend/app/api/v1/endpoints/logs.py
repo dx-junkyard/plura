@@ -21,6 +21,7 @@ from app.schemas.raw_log import (
     AckResponse,
 )
 from app.services.layer1.context_analyzer import context_analyzer
+from app.workers.tasks import analyze_log_structure
 
 router = APIRouter()
 
@@ -61,6 +62,14 @@ async def create_log(
         await session.refresh(log)
     except Exception:
         # 解析エラーは無視（後でリトライ可能）
+        pass
+
+    # 構造分析タスクを非同期でキック
+    # Celery タスクとしてバックグラウンドで実行
+    try:
+        analyze_log_structure.delay(str(log.id))
+    except Exception:
+        # タスクキューが利用不可でもログ作成は成功させる
         pass
 
     # 受容的な相槌を返す

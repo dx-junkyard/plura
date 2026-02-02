@@ -10,14 +10,15 @@ import { Send, Mic, MicOff, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useRecommendationStore } from '@/lib/store';
 import { cn, formatRelativeTime } from '@/lib/utils';
-import type { AckResponse } from '@/types';
+import type { AckResponse, RawLog } from '@/types';
 
 interface Message {
   id: string;
-  type: 'user' | 'system';
+  type: 'user' | 'system' | 'ai-question';
   content: string;
   timestamp: Date;
   logId?: string;
+  relationshipType?: string;
 }
 
 export function ThoughtStream() {
@@ -25,9 +26,12 @@ export function ThoughtStream() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [pendingLogId, setPendingLogId] = useState<string | null>(null);
+  const [isWaitingForAnalysis, setIsWaitingForAnalysis] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const debounceRef = useRef<NodeJS.Timeout>();
+  const pollingRef = useRef<NodeJS.Timeout>();
 
   const { setRecommendations, clearRecommendations } = useRecommendationStore();
 
@@ -35,6 +39,55 @@ export function ThoughtStream() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // 構造分析結果のポーリング
+  useEffect(() => {
+    if (!pendingLogId) return;
+
+    const pollForAnalysis = async () => {
+      try {
+        const log: RawLog = await api.getLog(pendingLogId);
+
+        if (log.is_structure_analyzed && log.structural_analysis?.probing_question) {
+          // 分析完了 - AIの問いかけを表示
+          const aiMessage: Message = {
+            id: `ai-${log.id}`,
+            type: 'ai-question',
+            content: log.structural_analysis.probing_question,
+            timestamp: new Date(),
+            logId: log.id,
+            relationshipType: log.structural_analysis.relationship_type,
+          };
+
+          setMessages((prev) => [...prev, aiMessage]);
+          setPendingLogId(null);
+          setIsWaitingForAnalysis(false);
+
+          // ポーリング停止
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = undefined;
+          }
+        }
+      } catch (error) {
+        // エラー時はポーリングを続行（ログが削除された等の場合は停止）
+        console.error('Polling error:', error);
+      }
+    };
+
+    // 初回実行
+    pollForAnalysis();
+
+    // 3秒おきにポーリング
+    pollingRef.current = setInterval(pollForAnalysis, 3000);
+
+    // クリーンアップ
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, [pendingLogId]);
 
   // 入力変更時にレコメンデーションを取得
   const fetchRecommendations = useCallback(async (text: string) => {
@@ -96,6 +149,10 @@ export function ThoughtStream() {
       };
 
       setMessages((prev) => [...prev, systemMessage]);
+
+      // 構造分析のポーリングを開始
+      setPendingLogId(response.log_id);
+      setIsWaitingForAnalysis(true);
     } catch (error) {
       const errorMessage: Message = {
         id: Date.now().toString(),
@@ -142,9 +199,16 @@ export function ThoughtStream() {
               'max-w-[80%] rounded-lg p-3',
               message.type === 'user'
                 ? 'ml-auto bg-private-100 text-gray-800'
+                : message.type === 'ai-question'
+                ? 'mr-auto bg-blue-50 border border-blue-200 text-gray-700'
                 : 'mr-auto bg-gray-100 text-gray-600'
             )}
           >
+            {message.type === 'ai-question' && (
+              <span className="text-xs text-blue-500 font-medium mb-1 block">
+                🤔 考えを深める問い
+              </span>
+            )}
             <p className="whitespace-pre-wrap">{message.content}</p>
             <span className="text-xs text-gray-400 mt-1 block">
               {formatRelativeTime(message.timestamp.toISOString())}
@@ -156,6 +220,13 @@ export function ThoughtStream() {
           <div className="mr-auto bg-gray-100 rounded-lg p-3 flex items-center gap-2 text-gray-500">
             <Loader2 className="w-4 h-4 animate-spin" />
             <span>受け取っています...</span>
+          </div>
+        )}
+
+        {isWaitingForAnalysis && !isSubmitting && (
+          <div className="mr-auto bg-blue-50 border border-blue-100 rounded-lg p-3 flex items-center gap-2 text-blue-600">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>考えを整理しています...</span>
           </div>
         )}
 
