@@ -5,14 +5,14 @@ Layer 2: 文脈依存型・構造的理解アップデート機能
 過去の会話履歴と直前の構造的理解（仮説）を踏まえ、
 新しいログが「追加情報」「並列（亜種）」「訂正」「新規」のいずれかを判定し、
 構造的理解を動的に更新する。
+
+深い思考が必要なため、DEEPモデル（reasoning model）を使用。
 """
-import json
 from typing import Dict, List, Optional
 from enum import Enum
 
-from openai import AsyncOpenAI
-
 from app.core.config import settings
+from app.core.llm import LLMClient, ModelTier
 
 
 class RelationshipType(str, Enum):
@@ -33,10 +33,13 @@ class StructuralAnalyzer:
     - 関係性判定: 新しいログが過去の仮説に対してどのような関係にあるか判定
     - 構造的理解の統合・更新: 判定結果に基づき構造的課題を更新
     - 問いの生成: 更新された理解に基づき深掘り質問を作成
+
+    DEEPモデル（reasoning model）を使用して深い思考で分析を行う。
     """
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        # DEEPモデルを使用（複雑な構造的推論が必要なため）
+        self.llm_client = LLMClient(tier=ModelTier.DEEP) if settings.openai_api_key else None
 
     async def analyze(
         self,
@@ -57,10 +60,11 @@ class StructuralAnalyzer:
                 "relationship_type": "ADDITIVE" | "PARALLEL" | "CORRECTION" | "NEW",
                 "relationship_reason": str,
                 "updated_structural_issue": str,
-                "probing_question": str
+                "probing_question": str,
+                "model_info": dict  # 使用したモデル情報
             }
         """
-        if not self.client:
+        if not self.llm_client:
             return self._fallback_analyze(current_log, previous_hypothesis)
 
         prompt = self._build_analysis_prompt(
@@ -68,18 +72,19 @@ class StructuralAnalyzer:
         )
 
         try:
-            response = await self.client.chat.completions.create(
-                model=settings.openai_model,
+            result = await self.llm_client.chat_completion(
                 messages=[
                     {"role": "system", "content": self._get_system_prompt()},
                     {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"},
                 temperature=0.4,
+                json_response=True,
             )
 
-            result = json.loads(response.choices[0].message.content)
-            return self._validate_result(result)
+            validated = self._validate_result(result)
+            # モデル情報を追加（UIで表示用）
+            validated["model_info"] = self.llm_client.get_model_info()
+            return validated
 
         except Exception as e:
             return self._fallback_analyze(current_log, previous_hypothesis)

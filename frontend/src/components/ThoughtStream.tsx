@@ -65,8 +65,8 @@ export function ThoughtStream() {
   const initializeAnalysisSteps = useCallback(() => {
     setAnalysisSteps([
       { id: 'receive', label: '入力を受け取りました', status: 'completed' },
-      { id: 'context', label: '文脈を分析中...', status: 'in_progress' },
-      { id: 'structure', label: '構造的な課題を整理中...', status: 'pending' },
+      { id: 'context', label: '文脈を分析中... (Fast)', status: 'in_progress' },
+      { id: 'structure', label: '深い思考で構造を分析中... (Deep)', status: 'pending' },
       { id: 'question', label: '深掘りの問いを生成中...', status: 'pending' },
     ]);
     setIsAnalysisExpanded(true);
@@ -84,21 +84,25 @@ export function ThoughtStream() {
         if (log.is_analyzed && !log.is_structure_analyzed) {
           setAnalysisSteps((prev) =>
             prev.map((step) => {
-              if (step.id === 'context') return { ...step, label: '文脈を分析しました', status: 'completed' };
-              if (step.id === 'structure') return { ...step, status: 'in_progress' };
+              if (step.id === 'context') return { ...step, label: '文脈を分析しました (Fast)', status: 'completed' };
+              if (step.id === 'structure') return { ...step, label: '深い思考で構造を分析中... (Deep)', status: 'in_progress' };
               return step;
             })
           );
         }
 
         if (log.is_structure_analyzed && log.structural_analysis?.probing_question) {
+          // モデル情報を取得
+          const modelInfo = log.structural_analysis.model_info;
+          const isReasoning = modelInfo?.is_reasoning;
+
           // すべてのステップを完了に
           setAnalysisSteps((prev) =>
             prev.map((step) => ({
               ...step,
               status: 'completed',
-              label: step.id === 'context' ? '文脈を分析しました' :
-                     step.id === 'structure' ? '構造的な課題を整理しました' :
+              label: step.id === 'context' ? '文脈を分析しました (Fast)' :
+                     step.id === 'structure' ? `構造を深く分析しました${isReasoning ? ' (Reasoning)' : ' (Deep)'}` :
                      step.id === 'question' ? '深掘りの問いを生成しました' : step.label,
             }))
           );
@@ -459,12 +463,24 @@ MINDYARD で思考を整理しました`;
               <div className="mt-3 pt-3 border-t border-blue-100">
                 <p className="text-xs text-blue-600 font-medium mb-1">構造的な課題:</p>
                 <p className="text-sm text-gray-600 mb-2">{message.structuralAnalysis.updated_structural_issue}</p>
-                <span className="inline-block text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">
-                  {message.structuralAnalysis.relationship_type === 'ADDITIVE' && '深化'}
-                  {message.structuralAnalysis.relationship_type === 'PARALLEL' && '並列'}
-                  {message.structuralAnalysis.relationship_type === 'CORRECTION' && '訂正'}
-                  {message.structuralAnalysis.relationship_type === 'NEW' && '新規'}
-                </span>
+                <div className="flex flex-wrap gap-2">
+                  <span className="inline-block text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">
+                    {message.structuralAnalysis.relationship_type === 'ADDITIVE' && '深化'}
+                    {message.structuralAnalysis.relationship_type === 'PARALLEL' && '並列'}
+                    {message.structuralAnalysis.relationship_type === 'CORRECTION' && '訂正'}
+                    {message.structuralAnalysis.relationship_type === 'NEW' && '新規'}
+                  </span>
+                  {message.structuralAnalysis.model_info && (
+                    <span className={cn(
+                      "inline-block text-xs px-2 py-0.5 rounded-full",
+                      message.structuralAnalysis.model_info.is_reasoning
+                        ? "bg-purple-100 text-purple-600"
+                        : "bg-gray-100 text-gray-500"
+                    )}>
+                      {message.structuralAnalysis.model_info.is_reasoning ? 'Reasoning' : message.structuralAnalysis.model_info.tier}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             <span className="text-xs text-gray-400 mt-1 block">

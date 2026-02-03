@@ -23,12 +23,20 @@ export interface Token {
 // Log Intent
 export type LogIntent = 'log' | 'vent' | 'structure';
 
+// Model Info
+export interface ModelInfo {
+  tier: 'deep' | 'balanced' | 'fast';
+  model: string;
+  is_reasoning: boolean;
+}
+
 // Structural Analysis Result
 export interface StructuralAnalysis {
   relationship_type: 'ADDITIVE' | 'PARALLEL' | 'CORRECTION' | 'NEW';
   relationship_reason: string;
   updated_structural_issue: string;
   probing_question: string;
+  model_info?: ModelInfo;  // 使用したモデル情報
 }
 
 // Raw Log (Layer 1)

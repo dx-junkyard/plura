@@ -1,13 +1,13 @@
 """
 MINDYARD - Insight Distiller
 Layer 2: 個別の事象を汎用的な「教訓」や「パターン」に昇華させる
+
+バランスの取れた処理が必要なため、BALANCEDモデルを使用。
 """
-import json
 from typing import Dict, Optional
 
-from openai import AsyncOpenAI
-
 from app.core.config import settings
+from app.core.llm import LLMClient, ModelTier
 
 
 class InsightDistiller:
@@ -18,10 +18,13 @@ class InsightDistiller:
     1. 要約: 長文のログから要点を抜き出す
     2. 構造化: Context / Problem / Solution/Result の形式に整形
     3. 抽象化: 具体的経験を抽象的なタイトルに変換
+
+    BALANCEDモデルを使用してバランスの取れた処理を行う。
     """
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        # BALANCEDモデルを使用
+        self.llm_client = LLMClient(tier=ModelTier.BALANCED) if settings.openai_api_key else None
 
     async def distill(self, sanitized_content: str, metadata: Optional[Dict] = None) -> Dict:
         """
@@ -38,23 +41,21 @@ class InsightDistiller:
                 "tags": List[str],
             }
         """
-        if not self.client:
+        if not self.llm_client:
             return self._fallback_distill(sanitized_content)
 
         prompt = self._build_distill_prompt(sanitized_content)
 
         try:
-            response = await self.client.chat.completions.create(
-                model=settings.openai_model,
+            result = await self.llm_client.chat_completion(
                 messages=[
                     {"role": "system", "content": self._get_system_prompt()},
                     {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"},
                 temperature=0.4,
+                json_response=True,
             )
 
-            result = json.loads(response.choices[0].message.content)
             return self._validate_result(result)
 
         except Exception as e:

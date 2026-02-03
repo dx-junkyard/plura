@@ -1,13 +1,14 @@
 """
 MINDYARD - Privacy Sanitizer
 Layer 2: 個人特定につながる情報を除去・置換するフィルター
+
+正確性が重要なため、BALANCEDモデルを使用。
 """
 import re
 from typing import Dict, List, Tuple
 
-from openai import AsyncOpenAI
-
 from app.core.config import settings
+from app.core.llm import LLMClient, ModelTier
 
 
 class PrivacySanitizer:
@@ -17,10 +18,13 @@ class PrivacySanitizer:
     機能:
     - PII除去: 電話番号、メールアドレス、氏名を検出しマスキング
     - 固有名詞の一般化: 特定企業名やプロジェクト名を一般的な役割名に置換
+
+    BALANCEDモデルを使用して正確な匿名化処理を行う。
     """
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        # BALANCEDモデルを使用
+        self.llm_client = LLMClient(tier=ModelTier.BALANCED) if settings.openai_api_key else None
 
         # 正規表現パターン
         self.patterns = {
@@ -154,8 +158,7 @@ class PrivacySanitizer:
 }}"""
 
         try:
-            response = await self.client.chat.completions.create(
-                model=settings.openai_model,
+            result = await self.llm_client.chat_completion(
                 messages=[
                     {
                         "role": "system",
@@ -163,12 +166,10 @@ class PrivacySanitizer:
                     },
                     {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"},
                 temperature=0.2,
+                json_response=True,
             )
 
-            import json
-            result = json.loads(response.choices[0].message.content)
             return result.get("sanitized_text", content), result.get("replacements", [])
 
         except Exception as e:

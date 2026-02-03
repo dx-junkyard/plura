@@ -1,14 +1,14 @@
 """
 MINDYARD - Sharing Broker
 Layer 2: 生成されたインサイトをユーザーに提示し、共有の許諾を得る
+
+バランスの取れた評価が必要なため、BALANCEDモデルを使用。
 """
-import json
 from typing import Dict, Optional, Tuple
 from datetime import datetime, timezone
 
-from openai import AsyncOpenAI
-
 from app.core.config import settings
+from app.core.llm import LLMClient, ModelTier
 
 
 class SharingBroker:
@@ -19,10 +19,13 @@ class SharingBroker:
     - 共有価値スコアの算出
     - 共有提案の生成
     - ユーザーの承認処理
+
+    BALANCEDモデルを使用してバランスの取れた評価を行う。
     """
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        # BALANCEDモデルを使用
+        self.llm_client = LLMClient(tier=ModelTier.BALANCED) if settings.openai_api_key else None
         self.threshold = settings.sharing_threshold_score
 
     async def evaluate_sharing_value(self, insight: Dict) -> Dict:
@@ -38,23 +41,21 @@ class SharingBroker:
                 "reasoning": str
             }
         """
-        if not self.client:
+        if not self.llm_client:
             return self._fallback_evaluate(insight)
 
         prompt = self._build_evaluation_prompt(insight)
 
         try:
-            response = await self.client.chat.completions.create(
-                model=settings.openai_model,
+            result = await self.llm_client.chat_completion(
                 messages=[
                     {"role": "system", "content": self._get_evaluation_system_prompt()},
                     {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"},
                 temperature=0.3,
+                json_response=True,
             )
 
-            result = json.loads(response.choices[0].message.content)
             return self._parse_evaluation_result(result)
 
         except Exception as e:

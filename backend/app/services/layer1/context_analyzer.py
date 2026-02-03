@@ -1,13 +1,13 @@
 """
 MINDYARD - Context Analyzer
 Layer 1: 入力された生ログを解析し、メタデータを付与する
+
+素早いレスポンスが必要なため、FASTモデルを使用。
 """
-import json
 from typing import Dict, List, Optional, Tuple
 
-from openai import AsyncOpenAI
-
 from app.core.config import settings
+from app.core.llm import LLMClient, ModelTier
 from app.models.raw_log import LogIntent, EmotionTag
 
 
@@ -19,10 +19,13 @@ class ContextAnalyzer:
     - 感情分析: テキストから感情タグを付与
     - トピック抽出: 議論されている主題を特定
     - インテント分類: ユーザーの意図を判別
+
+    FASTモデルを使用して素早いレスポンスを提供。
     """
 
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        # FASTモデルを使用（素早い応答が求められるため）
+        self.llm_client = LLMClient(tier=ModelTier.FAST) if settings.openai_api_key else None
 
     async def analyze(self, content: str) -> Dict:
         """
@@ -36,24 +39,22 @@ class ContextAnalyzer:
                 "topics": List[str]
             }
         """
-        if not self.client:
+        if not self.llm_client:
             # OpenAI APIキーがない場合はダミー解析
             return self._fallback_analyze(content)
 
         prompt = self._build_analysis_prompt(content)
 
         try:
-            response = await self.client.chat.completions.create(
-                model=settings.openai_model,
+            result = await self.llm_client.chat_completion(
                 messages=[
                     {"role": "system", "content": self._get_system_prompt()},
                     {"role": "user", "content": prompt}
                 ],
-                response_format={"type": "json_object"},
                 temperature=0.3,
+                json_response=True,
             )
 
-            result = json.loads(response.choices[0].message.content)
             return self._parse_analysis_result(result)
 
         except Exception as e:

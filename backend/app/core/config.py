@@ -49,8 +49,18 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4-turbo-preview"
     openai_embedding_model: str = "text-embedding-3-small"
+
+    # LLM Model Configuration (3 patterns)
+    # Deep: 深い思考が必要な複雑なタスク用（reasoning model）
+    llm_model_deep: str = "gpt-5.2"
+    # Balanced: バランスの取れた処理用
+    llm_model_balanced: str = "gpt-5-mini"
+    # Fast: 素早いレスポンスが必要なタスク用
+    llm_model_fast: str = "gpt-5-nano"
+
+    # Legacy support (deprecated, use llm_model_* instead)
+    openai_model: str = "gpt-4-turbo-preview"
 
     # Celery
     celery_broker_url: str = Field(default="redis://localhost:6379/1")
