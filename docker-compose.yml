@@ -95,7 +95,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-    command: celery -A app.workers.celery_app worker --loglevel=info
+    command: celery -A app.workers.celery_app worker --loglevel=info -Q layer1,layer2,celery
 
   # Frontend (Next.js)
   frontend:
