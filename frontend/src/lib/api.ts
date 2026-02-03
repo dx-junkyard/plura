@@ -95,6 +95,18 @@ class ApiClient {
     return data;
   }
 
+  async transcribeAudio(audioBlob: Blob): Promise<AckResponse> {
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'recording.webm');
+
+    const { data } = await this.client.post<AckResponse>('/logs/transcribe', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return data;
+  }
+
   async getLogs(page: number = 1, page_size: number = 20): Promise<RawLogListResponse> {
     const { data } = await this.client.get<RawLogListResponse>('/logs/', {
       params: { page, page_size },

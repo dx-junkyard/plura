@@ -30,4 +30,5 @@ celery_app.conf.update(
 celery_app.conf.task_routes = {
     "app.workers.tasks.process_log_for_insight": {"queue": "layer2"},
     "app.workers.tasks.analyze_log_context": {"queue": "layer1"},
+    "app.workers.tasks.analyze_log_structure": {"queue": "layer2"},
 }

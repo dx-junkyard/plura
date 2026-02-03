@@ -6,9 +6,10 @@ from datetime import datetime
 from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
+from openai import AsyncOpenAI
 
 from app.api.deps import get_current_user
 from app.db.base import get_async_session
@@ -21,8 +22,20 @@ from app.schemas.raw_log import (
     AckResponse,
 )
 from app.services.layer1.context_analyzer import context_analyzer
+from app.workers.tasks import analyze_log_structure
+from app.core.config import settings
 
 router = APIRouter()
+
+# OpenAI クライアント（Whisper用）
+_openai_client = None
+
+def get_openai_client() -> AsyncOpenAI:
+    """OpenAI クライアントのシングルトン取得"""
+    global _openai_client
+    if _openai_client is None and settings.openai_api_key:
+        _openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+    return _openai_client
 
 
 @router.post("/", response_model=AckResponse, status_code=status.HTTP_201_CREATED)
@@ -61,6 +74,14 @@ async def create_log(
         await session.refresh(log)
     except Exception:
         # 解析エラーは無視（後でリトライ可能）
+        pass
+
+    # 構造分析タスクを非同期でキック
+    # Celery タスクとしてバックグラウンドで実行
+    try:
+        analyze_log_structure.delay(str(log.id))
+    except Exception:
+        # タスクキューが利用不可でもログ作成は成功させる
         pass
 
     # 受容的な相槌を返す
@@ -187,3 +208,97 @@ async def get_logs_by_month(
             for row in rows
         ],
     }
+
+
+@router.post("/transcribe", response_model=AckResponse, status_code=status.HTTP_201_CREATED)
+async def transcribe_audio(
+    audio: UploadFile = File(...),
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    音声ファイルをWhisper APIで文字起こしし、ログとして保存
+
+    - 音声ファイルを受け取り、OpenAI Whisper APIで文字起こし
+    - 文字起こし結果をログとして保存
+    - Context Analyzer と Structural Analyzer を実行
+    """
+    client = get_openai_client()
+
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="音声認識サービスが利用できません。API キーを確認してください。",
+        )
+
+    # 音声ファイルの検証
+    allowed_types = [
+        "audio/webm", "audio/mp4", "audio/mpeg", "audio/mpga",
+        "audio/m4a", "audio/wav", "audio/ogg", "audio/flac"
+    ]
+    if audio.content_type and audio.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"サポートされていない音声形式です: {audio.content_type}",
+        )
+
+    try:
+        # 音声ファイルを読み取り
+        audio_content = await audio.read()
+
+        # Whisper API で文字起こし
+        transcription = await client.audio.transcriptions.create(
+            model="whisper-1",
+            file=(audio.filename or "audio.webm", audio_content, audio.content_type or "audio/webm"),
+            language="ja",  # 日本語を指定
+        )
+
+        transcribed_text = transcription.text.strip()
+
+        if not transcribed_text:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="音声を認識できませんでした。もう一度お試しください。",
+            )
+
+        # ログの作成
+        log = RawLog(
+            user_id=current_user.id,
+            content=transcribed_text,
+            content_type="voice",  # 音声入力であることを記録
+        )
+        session.add(log)
+        await session.commit()
+        await session.refresh(log)
+
+        # Context Analyzer を実行
+        try:
+            analysis = await context_analyzer.analyze(transcribed_text)
+            log.intent = analysis.get("intent")
+            log.emotions = analysis.get("emotions")
+            log.emotion_scores = analysis.get("emotion_scores")
+            log.topics = analysis.get("topics")
+            log.is_analyzed = True
+            await session.commit()
+            await session.refresh(log)
+        except Exception:
+            # 解析エラーは無視
+            pass
+
+        # 構造分析タスクを非同期でキック
+        try:
+            analyze_log_structure.delay(str(log.id))
+        except Exception:
+            # タスクキューが利用不可でもログ作成は成功させる
+            pass
+
+        # 受容的な相槌を返す
+        return AckResponse.create_ack(log_id=log.id, intent=log.intent)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"音声の処理中にエラーが発生しました: {str(e)}",
+        )

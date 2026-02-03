@@ -102,6 +102,13 @@ class RawLog(Base):
         nullable=True,
     )
 
+    # Structural Analyzer による構造的分析結果
+    structural_analysis: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="StructuralAnalyzer による構造的課題分析結果",
+    )
+
     # 処理状態
     is_analyzed: Mapped[bool] = mapped_column(
         Boolean,
@@ -109,6 +116,11 @@ class RawLog(Base):
         nullable=False,
     )
     is_processed_for_insight: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    is_structure_analyzed: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,

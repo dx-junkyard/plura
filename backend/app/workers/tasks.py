@@ -17,6 +17,7 @@ from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer2.privacy_sanitizer import privacy_sanitizer
 from app.services.layer2.insight_distiller import insight_distiller
 from app.services.layer2.sharing_broker import sharing_broker
+from app.services.layer2.structural_analyzer import structural_analyzer
 from app.core.config import settings
 
 
@@ -76,6 +77,89 @@ def analyze_log_context(self, log_id: str):
                 return {"status": "error", "message": str(e)}
 
     return run_async(_analyze())
+
+
+@celery_app.task(bind=True, max_retries=3)
+def analyze_log_structure(self, log_id: str):
+    """
+    Layer 2: Structural Analyzer タスク
+    文脈依存型・構造的理解アップデート
+
+    過去の会話履歴と直前の構造的理解を踏まえ、
+    新しいログの関係性を判定し構造的課題を更新する。
+    """
+    async def _analyze_structure():
+        async with async_session_maker() as session:
+            # 現在のログを取得
+            result = await session.execute(
+                select(RawLog).where(RawLog.id == uuid.UUID(log_id))
+            )
+            log = result.scalar_one_or_none()
+
+            if not log:
+                return {"status": "error", "message": "Log not found"}
+
+            if log.is_structure_analyzed:
+                return {"status": "skipped", "message": "Already analyzed for structure"}
+
+            try:
+                # Step 1: 履歴取得 - 同じユーザーの直近5件のログを取得（今回のログを除く）
+                history_result = await session.execute(
+                    select(RawLog)
+                    .where(
+                        RawLog.user_id == log.user_id,
+                        RawLog.id != log.id,
+                    )
+                    .order_by(RawLog.created_at.desc())
+                    .limit(5)
+                )
+                past_logs = history_result.scalars().all()
+
+                # Step 2: 前回仮説の抽出
+                previous_hypothesis = None
+                if past_logs:
+                    latest_prev_log = past_logs[0]
+                    if latest_prev_log.structural_analysis:
+                        # updated_structural_issue を優先、なければ structural_issue
+                        previous_hypothesis = (
+                            latest_prev_log.structural_analysis.get("updated_structural_issue")
+                            or latest_prev_log.structural_analysis.get("structural_issue")
+                        )
+
+                # Step 3: 要約リスト作成
+                recent_history = []
+                for prev_log in past_logs:
+                    # コンテンツを短く切り詰める（100文字まで）
+                    summary = prev_log.content[:100]
+                    if len(prev_log.content) > 100:
+                        summary += "..."
+                    recent_history.append(summary)
+
+                # Step 4: StructuralAnalyzer 実行
+                analysis = await structural_analyzer.analyze(
+                    current_log=log.content,
+                    recent_history=recent_history if recent_history else None,
+                    previous_hypothesis=previous_hypothesis,
+                )
+
+                # 結果を保存
+                log.structural_analysis = analysis
+                log.is_structure_analyzed = True
+
+                await session.commit()
+
+                return {
+                    "status": "success",
+                    "log_id": log_id,
+                    "relationship_type": analysis.get("relationship_type"),
+                    "updated_structural_issue": analysis.get("updated_structural_issue"),
+                    "probing_question": analysis.get("probing_question"),
+                }
+
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+
+    return run_async(_analyze_structure())
 
 
 @celery_app.task(bind=True, max_retries=3)

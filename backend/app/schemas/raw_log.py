@@ -39,8 +39,10 @@ class RawLogResponse(RawLogBase):
     emotions: Optional[List[str]] = None
     emotion_scores: Optional[dict] = None
     topics: Optional[List[str]] = None
+    structural_analysis: Optional[dict] = None
     is_analyzed: bool
     is_processed_for_insight: bool
+    is_structure_analyzed: bool = False
     created_at: datetime
     updated_at: datetime
 
