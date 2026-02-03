@@ -292,8 +292,12 @@ async def transcribe_audio(
             # タスクキューが利用不可でもログ作成は成功させる
             pass
 
-        # 受容的な相槌を返す
-        return AckResponse.create_ack(log_id=log.id, intent=log.intent)
+        # 受容的な相槌を返す（音声入力の場合は文字起こしテキストも含める）
+        return AckResponse.create_ack(
+            log_id=log.id,
+            intent=log.intent,
+            transcribed_text=transcribed_text,
+        )
 
     except HTTPException:
         raise

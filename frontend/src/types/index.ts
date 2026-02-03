@@ -60,6 +60,7 @@ export interface AckResponse {
   message: string;
   log_id: string;
   timestamp: string;
+  transcribed_text?: string;  // 音声入力時の文字起こしテキスト
 }
 
 // Insight Card (Layer 3)

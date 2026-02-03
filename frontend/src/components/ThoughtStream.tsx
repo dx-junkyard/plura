@@ -6,7 +6,7 @@
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { Send, Mic, MicOff, Loader2 } from 'lucide-react';
+import { Send, Mic, MicOff, Loader2, ChevronDown, ChevronUp, Share2, Copy, Check } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useRecommendationStore } from '@/lib/store';
 import { cn, formatRelativeTime } from '@/lib/utils';
@@ -19,6 +19,20 @@ interface Message {
   timestamp: Date;
   logId?: string;
   relationshipType?: string;
+  structuralAnalysis?: {
+    relationship_type: string;
+    relationship_reason: string;
+    updated_structural_issue: string;
+    probing_question: string;
+  };
+  isVoiceInput?: boolean;
+}
+
+// 整理プロセスのステップ定義
+interface AnalysisStep {
+  id: string;
+  label: string;
+  status: 'pending' | 'in_progress' | 'completed';
 }
 
 export function ThoughtStream() {
@@ -30,6 +44,9 @@ export function ThoughtStream() {
   const [pendingLogId, setPendingLogId] = useState<string | null>(null);
   const [isWaitingForAnalysis, setIsWaitingForAnalysis] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [analysisSteps, setAnalysisSteps] = useState<AnalysisStep[]>([]);
+  const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const debounceRef = useRef<NodeJS.Timeout>();
@@ -44,6 +61,17 @@ export function ThoughtStream() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // 整理プロセス開始時にステップを初期化
+  const initializeAnalysisSteps = useCallback(() => {
+    setAnalysisSteps([
+      { id: 'receive', label: '入力を受け取りました', status: 'completed' },
+      { id: 'context', label: '文脈を分析中...', status: 'in_progress' },
+      { id: 'structure', label: '構造的な課題を整理中...', status: 'pending' },
+      { id: 'question', label: '深掘りの問いを生成中...', status: 'pending' },
+    ]);
+    setIsAnalysisExpanded(true);
+  }, []);
+
   // 構造分析結果のポーリング
   useEffect(() => {
     if (!pendingLogId) return;
@@ -52,7 +80,29 @@ export function ThoughtStream() {
       try {
         const log: RawLog = await api.getLog(pendingLogId);
 
+        // 分析状態に応じてステップを更新
+        if (log.is_analyzed && !log.is_structure_analyzed) {
+          setAnalysisSteps((prev) =>
+            prev.map((step) => {
+              if (step.id === 'context') return { ...step, label: '文脈を分析しました', status: 'completed' };
+              if (step.id === 'structure') return { ...step, status: 'in_progress' };
+              return step;
+            })
+          );
+        }
+
         if (log.is_structure_analyzed && log.structural_analysis?.probing_question) {
+          // すべてのステップを完了に
+          setAnalysisSteps((prev) =>
+            prev.map((step) => ({
+              ...step,
+              status: 'completed',
+              label: step.id === 'context' ? '文脈を分析しました' :
+                     step.id === 'structure' ? '構造的な課題を整理しました' :
+                     step.id === 'question' ? '深掘りの問いを生成しました' : step.label,
+            }))
+          );
+
           // 分析完了 - AIの問いかけを表示
           const aiMessage: Message = {
             id: `ai-${log.id}`,
@@ -61,6 +111,7 @@ export function ThoughtStream() {
             timestamp: new Date(),
             logId: log.id,
             relationshipType: log.structural_analysis.relationship_type,
+            structuralAnalysis: log.structural_analysis,
           };
 
           setMessages((prev) => [...prev, aiMessage]);
@@ -79,6 +130,7 @@ export function ThoughtStream() {
         if (error.response && error.response.status === 404) {
           setPendingLogId(null);
           setIsWaitingForAnalysis(false);
+          setAnalysisSteps([]);
           if (pollingRef.current) {
             clearInterval(pollingRef.current);
             pollingRef.current = undefined;
@@ -165,6 +217,7 @@ export function ThoughtStream() {
       // 構造分析のポーリングを開始
       setPendingLogId(response.log_id);
       setIsWaitingForAnalysis(true);
+      initializeAnalysisSteps();
     } catch (error) {
       const errorMessage: Message = {
         id: Date.now().toString(),
@@ -178,6 +231,41 @@ export function ThoughtStream() {
       inputRef.current?.focus();
     }
   };
+
+  // 整理結果を共有用テキストとしてコピー
+  const copyAnalysisResult = useCallback(async (message: Message) => {
+    if (!message.structuralAnalysis) return;
+
+    const { relationship_type, updated_structural_issue, probing_question } = message.structuralAnalysis;
+
+    const relationshipLabel = {
+      ADDITIVE: '深化',
+      PARALLEL: '並列',
+      CORRECTION: '訂正',
+      NEW: '新規',
+    }[relationship_type] || relationship_type;
+
+    const shareText = `【思考の整理結果】
+
+📌 構造的な課題:
+${updated_structural_issue}
+
+💭 深掘りの問い:
+${probing_question}
+
+🔗 関係性: ${relationshipLabel}
+
+---
+MINDYARD で思考を整理しました`;
+
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setCopiedMessageId(message.id);
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (error) {
+      console.error('コピーに失敗しました:', error);
+    }
+  }, []);
 
   // キーボードショートカット
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -277,9 +365,10 @@ export function ThoughtStream() {
         const userMessage: Message = {
           id: `voice-${response.log_id}`,
           type: 'user',
-          content: '🎤 (音声入力)',
+          content: response.transcribed_text || '(音声入力)',
           timestamp: new Date(response.timestamp),
           logId: response.log_id,
+          isVoiceInput: true,
         };
 
         // システムからの相槌
@@ -297,6 +386,7 @@ export function ThoughtStream() {
       // 構造分析のポーリングを開始
       setPendingLogId(response.log_id);
       setIsWaitingForAnalysis(true);
+      initializeAnalysisSteps();
     } catch (error) {
       console.error('音声送信エラー:', error);
 
@@ -339,12 +429,44 @@ export function ThoughtStream() {
                 : 'mr-auto bg-gray-100 text-gray-600'
             )}
           >
-            {message.type === 'ai-question' && (
-              <span className="text-xs text-blue-500 font-medium mb-1 block">
-                🤔 考えを深める問い
+            {message.type === 'user' && message.isVoiceInput && (
+              <span className="text-xs text-private-500 font-medium mb-1 flex items-center gap-1">
+                <Mic className="w-3 h-3" /> 音声入力
               </span>
             )}
+            {message.type === 'ai-question' && (
+              <div className="flex items-start justify-between mb-2">
+                <span className="text-xs text-blue-500 font-medium">
+                  🤔 考えを深める問い
+                </span>
+                {message.structuralAnalysis && (
+                  <button
+                    onClick={() => copyAnalysisResult(message)}
+                    className="text-blue-400 hover:text-blue-600 transition-colors p-1 -m-1"
+                    title="整理結果をコピー"
+                  >
+                    {copiedMessageId === message.id ? (
+                      <Check className="w-4 h-4 text-green-500" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
             <p className="whitespace-pre-wrap">{message.content}</p>
+            {message.type === 'ai-question' && message.structuralAnalysis && (
+              <div className="mt-3 pt-3 border-t border-blue-100">
+                <p className="text-xs text-blue-600 font-medium mb-1">構造的な課題:</p>
+                <p className="text-sm text-gray-600 mb-2">{message.structuralAnalysis.updated_structural_issue}</p>
+                <span className="inline-block text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">
+                  {message.structuralAnalysis.relationship_type === 'ADDITIVE' && '深化'}
+                  {message.structuralAnalysis.relationship_type === 'PARALLEL' && '並列'}
+                  {message.structuralAnalysis.relationship_type === 'CORRECTION' && '訂正'}
+                  {message.structuralAnalysis.relationship_type === 'NEW' && '新規'}
+                </span>
+              </div>
+            )}
             <span className="text-xs text-gray-400 mt-1 block">
               {formatRelativeTime(message.timestamp.toISOString())}
             </span>
@@ -359,9 +481,43 @@ export function ThoughtStream() {
         )}
 
         {isWaitingForAnalysis && !isSubmitting && (
-          <div className="mr-auto bg-blue-50 border border-blue-100 rounded-lg p-3 flex items-center gap-2 text-blue-600">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>考えを整理しています...</span>
+          <div className="mr-auto bg-blue-50 border border-blue-100 rounded-lg p-3 max-w-[80%]">
+            <button
+              onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+              className="flex items-center gap-2 text-blue-600 w-full"
+            >
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="flex-1 text-left">考えを整理しています...</span>
+              {isAnalysisExpanded ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </button>
+            {isAnalysisExpanded && analysisSteps.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-blue-100 space-y-2">
+                {analysisSteps.map((step) => (
+                  <div key={step.id} className="flex items-center gap-2 text-sm">
+                    {step.status === 'completed' ? (
+                      <Check className="w-4 h-4 text-green-500" />
+                    ) : step.status === 'in_progress' ? (
+                      <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full border-2 border-gray-300" />
+                    )}
+                    <span
+                      className={cn(
+                        step.status === 'completed' ? 'text-green-600' :
+                        step.status === 'in_progress' ? 'text-blue-600' :
+                        'text-gray-400'
+                      )}
+                    >
+                      {step.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

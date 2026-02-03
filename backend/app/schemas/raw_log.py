@@ -67,9 +67,15 @@ class AckResponse(BaseModel):
     message: str
     log_id: uuid.UUID
     timestamp: datetime
+    transcribed_text: Optional[str] = None  # 音声入力時の文字起こしテキスト
 
     @classmethod
-    def create_ack(cls, log_id: uuid.UUID, intent: Optional[LogIntent] = None) -> "AckResponse":
+    def create_ack(
+        cls,
+        log_id: uuid.UUID,
+        intent: Optional[LogIntent] = None,
+        transcribed_text: Optional[str] = None,
+    ) -> "AckResponse":
         """意図に応じた相槌を生成"""
         ack_messages = {
             LogIntent.LOG: [
@@ -97,5 +103,6 @@ class AckResponse(BaseModel):
         return cls(
             message=message,
             log_id=log_id,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
+            transcribed_text=transcribed_text,
         )
