@@ -15,6 +15,9 @@ DEFAULT_LLM_CONFIG_FAST = {"provider": "openai", "model": "gpt-5-nano"}
 DEFAULT_LLM_CONFIG_BALANCED = {"provider": "openai", "model": "gpt-5-mini"}
 DEFAULT_LLM_CONFIG_DEEP = {"provider": "openai", "model": "gpt-5.2"}
 
+# デフォルトのEmbedding設定
+DEFAULT_EMBEDDING_CONFIG = {"provider": "openai", "model": "text-embedding-3-small"}
+
 
 class Settings(BaseSettings):
     """アプリケーション設定"""
@@ -56,11 +59,21 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: Optional[str] = None
-    openai_embedding_model: str = "text-embedding-3-small"
 
     # Vertex AI (Google Cloud)
     vertex_project_id: Optional[str] = None
     vertex_location: str = "us-central1"
+
+    # Embedding Configuration (Multi-Provider, JSON format)
+    # 例: EMBEDDING_CONFIG='{"provider": "openai", "model": "text-embedding-3-small"}'
+    # 例: EMBEDDING_CONFIG='{"provider": "vertex", "model": "text-embedding-004"}'
+    embedding_config: str = Field(
+        default=json.dumps(DEFAULT_EMBEDDING_CONFIG),
+        description="Embedding provider config (JSON string)"
+    )
+
+    # Legacy embedding model (deprecated, use embedding_config instead)
+    openai_embedding_model: str = "text-embedding-3-small"
 
     # LLM Configuration (Multi-Provider, JSON format)
     # 環境変数でJSON文字列として設定可能
@@ -128,6 +141,19 @@ class Settings(BaseSettings):
             }
             config = defaults.get(role, DEFAULT_LLM_CONFIG_BALANCED)
 
+        return config
+
+    def get_embedding_config(self) -> Dict[str, Any]:
+        """
+        Embedding設定を取得
+
+        Returns:
+            {"provider": "openai"|"vertex", "model": "model-name", ...}
+        """
+        try:
+            config = json.loads(self.embedding_config)
+        except json.JSONDecodeError:
+            config = DEFAULT_EMBEDDING_CONFIG
         return config
 
     def is_openai_available(self) -> bool:

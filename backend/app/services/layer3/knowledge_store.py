@@ -1,15 +1,18 @@
 """
 MINDYARD - Knowledge Graph Store
 Layer 3: 承認されたInsight Cardを格納するベクトルデータベース
+
+マルチプロバイダー対応のEmbeddingを使用。
 """
 import uuid
 from typing import Dict, List, Optional
 
-from openai import AsyncOpenAI
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 
 from app.core.config import settings
+from app.core.embedding import embedding_manager
+from app.core.embedding_provider import EmbeddingProvider
 
 
 class KnowledgeStore:
@@ -20,13 +23,24 @@ class KnowledgeStore:
     - インサイトのベクトル化と保存
     - 意味的類似検索
     - 関連インサイトの取得
+
+    マルチプロバイダー対応のEmbeddingを使用（OpenAI / Vertex AI）。
     """
 
     def __init__(self):
-        self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        self._embedding_provider: Optional[EmbeddingProvider] = None
         self.qdrant_client: Optional[QdrantClient] = None
         self.collection_name = settings.qdrant_collection_name
         self._initialized = False
+
+    def _get_embedding_provider(self) -> Optional[EmbeddingProvider]:
+        """Embeddingプロバイダーを取得（遅延初期化）"""
+        if self._embedding_provider is None:
+            try:
+                self._embedding_provider = embedding_manager.get_provider()
+            except Exception:
+                pass
+        return self._embedding_provider
 
     async def initialize(self):
         """Qdrantコレクションの初期化"""
@@ -39,6 +53,10 @@ class KnowledgeStore:
                 port=settings.qdrant_port,
             )
 
+            # Embeddingプロバイダーからベクトルサイズを取得
+            embedding_provider = self._get_embedding_provider()
+            vector_size = embedding_provider.vector_size if embedding_provider else 1536
+
             # コレクションが存在しない場合は作成
             collections = self.qdrant_client.get_collections().collections
             collection_names = [c.name for c in collections]
@@ -47,7 +65,7 @@ class KnowledgeStore:
                 self.qdrant_client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=models.VectorParams(
-                        size=1536,  # text-embedding-3-small の次元数
+                        size=vector_size,
                         distance=models.Distance.COSINE,
                     ),
                 )
@@ -60,15 +78,13 @@ class KnowledgeStore:
 
     async def _get_embedding(self, text: str) -> Optional[List[float]]:
         """テキストの埋め込みベクトルを取得"""
-        if not self.openai_client:
+        embedding_provider = self._get_embedding_provider()
+        if not embedding_provider:
             return None
 
         try:
-            response = await self.openai_client.embeddings.create(
-                model=settings.openai_embedding_model,
-                input=text,
-            )
-            return response.data[0].embedding
+            await embedding_provider.initialize()
+            return await embedding_provider.embed_text(text)
         except Exception as e:
             return None
 
@@ -86,7 +102,8 @@ class KnowledgeStore:
         if not self.qdrant_client:
             await self.initialize()
 
-        if not self.qdrant_client or not self.openai_client:
+        embedding_provider = self._get_embedding_provider()
+        if not self.qdrant_client or not embedding_provider:
             return None
 
         # 検索用テキストの構築
@@ -141,7 +158,8 @@ class KnowledgeStore:
         if not self.qdrant_client:
             await self.initialize()
 
-        if not self.qdrant_client or not self.openai_client:
+        embedding_provider = self._get_embedding_provider()
+        if not self.qdrant_client or not embedding_provider:
             return []
 
         # クエリの埋め込み

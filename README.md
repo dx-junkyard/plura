@@ -44,6 +44,17 @@ MINDYARDは用途に応じて最適なLLMプロバイダーとモデルを選択
 
 プロバイダーは環境変数で柔軟に切り替え可能です（OpenAI ↔ Vertex AI）。
 
+### Embeddingアーキテクチャ
+
+ベクトル検索（Knowledge Store）で使用するEmbeddingもマルチプロバイダー対応です。
+
+| プロバイダー | モデル | 次元数 | 特徴 |
+|-------------|--------|--------|------|
+| **OpenAI** | text-embedding-3-small | 1536 | 推奨、高速 |
+| **OpenAI** | text-embedding-3-large | 3072 | 高精度 |
+| **Vertex AI** | text-embedding-004 | 768 | Google Cloud統合 |
+| **Vertex AI** | text-multilingual-embedding-002 | 768 | 多言語対応 |
+
 ## 開発環境のセットアップ
 
 ### 前提条件
@@ -84,6 +95,9 @@ OPENAI_API_KEY=your-openai-api-key
 LLM_CONFIG_FAST='{"provider": "openai", "model": "gpt-5-nano"}'
 LLM_CONFIG_BALANCED='{"provider": "openai", "model": "gpt-5-mini"}'
 LLM_CONFIG_DEEP='{"provider": "openai", "model": "gpt-5.2"}'
+
+# Embedding設定（JSON形式）
+EMBEDDING_CONFIG='{"provider": "openai", "model": "text-embedding-3-small"}'
 ```
 
 #### Google Cloud Vertex AI（Gemini）
@@ -121,6 +135,9 @@ LLM_CONFIG_BALANCED='{"provider": "vertex", "model": "gemini-1.5-flash"}'
 
 # 例: DEEP に Gemini Pro を使用
 LLM_CONFIG_DEEP='{"provider": "vertex", "model": "gemini-1.5-pro"}'
+
+# 例: Vertex AI Embedding を使用
+EMBEDDING_CONFIG='{"provider": "vertex", "model": "text-embedding-004"}'
 ```
 
 **3. サービスアカウント認証（本番環境向け）**
@@ -143,10 +160,15 @@ gcloud iam service-accounts keys create ./credentials.json \
 export GOOGLE_APPLICATION_CREDENTIALS="./credentials.json"
 ```
 
-**利用可能なGeminiモデル:**
+**利用可能なGeminiモデル（LLM）:**
 - `gemini-1.5-flash` - 高速、コスト効率重視
 - `gemini-1.5-pro` - 高品質、複雑なタスク向け
 - `gemini-1.0-pro` - 汎用モデル
+
+**利用可能なVertex AIモデル（Embedding）:**
+- `text-embedding-004` - 推奨、768次元
+- `text-embedding-005` - 最新、768次元
+- `text-multilingual-embedding-002` - 多言語対応、768次元
 
 ### ローカル開発（Docker不使用）
 
