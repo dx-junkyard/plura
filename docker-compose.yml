@@ -83,6 +83,8 @@ services:
       # バックエンドから見た自分自身のURLを環境変数で設定
       API_PUBLIC_URL: https://${NGHOST}/api/v1
       ALLOWED_ORIGINS: https://${NGHOST}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
+      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
     ports:
       - "8000:8000"
     depends_on:
@@ -94,6 +96,7 @@ services:
         condition: service_started
     volumes:
       - ./backend:/app
+      - ./.gcp:/root/.config/gcloud
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   # Celery Worker
@@ -110,6 +113,8 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_PORT: 6333
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT}
+      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
     depends_on:
       postgres:
         condition: service_healthy
@@ -117,6 +122,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - ./.gcp:/root/.config/gcloud
     command: celery -A app.workers.celery_app worker --loglevel=info -Q layer1,layer2,celery
 
   # Frontend (Next.js)

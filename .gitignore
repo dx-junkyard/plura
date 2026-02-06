@@ -77,3 +77,7 @@ celerybeat.pid
 *.bak
 *.tmp
 *.temp
+
+# GCP
+.gcp/
+*.json
