@@ -18,10 +18,11 @@ redis==5.0.1
 celery==5.3.6
 
 # LLM and NLP
-openai==1.10.0
-langchain==0.1.4
-langchain-openai==0.0.3
-tiktoken==0.5.2
+openai>=1.10.0
+langchain>=0.1.12
+langchain-openai>=0.0.8
+langchain-community>=0.0.20
+tiktoken>=0.5.2
 
 # Google Cloud AI Platform (Vertex AI / Gemini)
 google-cloud-aiplatform>=1.38.0
@@ -54,4 +55,3 @@ structlog==24.1.0
 pytest==7.4.4
 pytest-asyncio==0.23.3
 pytest-cov==4.1.0
-httpx==0.26.0
