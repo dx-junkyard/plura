@@ -69,6 +69,8 @@ async def create_log(
         log.emotions = analysis.get("emotions")
         log.emotion_scores = analysis.get("emotion_scores")
         log.topics = analysis.get("topics")
+        log.tags = analysis.get("tags")
+        log.metadata_analysis = analysis.get("metadata_analysis")
         log.is_analyzed = True
         await session.commit()
         await session.refresh(log)
@@ -278,6 +280,8 @@ async def transcribe_audio(
             log.emotions = analysis.get("emotions")
             log.emotion_scores = analysis.get("emotion_scores")
             log.topics = analysis.get("topics")
+            log.tags = analysis.get("tags")
+            log.metadata_analysis = analysis.get("metadata_analysis")
             log.is_analyzed = True
             await session.commit()
             await session.refresh(log)

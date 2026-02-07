@@ -5,6 +5,7 @@ Layer 3: ユーザーが「検索」する前に、関連情報を提示する�
 from typing import Dict, List, Optional
 import uuid
 
+from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer3.knowledge_store import knowledge_store
 
 
@@ -53,10 +54,14 @@ class SerendipityMatcher:
             }
 
         # 類似インサイトを検索
+        current_context = await context_analyzer.analyze(current_input)
+        filter_tags = self._build_filter_tags(current_context)
+
         similar_insights = await knowledge_store.search_similar(
             query=current_input,
             limit=self.recommendation_limit + len(exclude_ids or []),
             score_threshold=self.score_threshold,
+            filter_tags=filter_tags,
         )
 
         # 除外IDをフィルタリング
@@ -111,6 +116,19 @@ class SerendipityMatcher:
         if count == 1:
             return "似た経験を持つ人がいます"
         return f"{count}件の関連する知見が見つかりました"
+
+    def _build_filter_tags(self, current_context: Dict) -> List[str]:
+        """現在入力の解析結果から検索タグを構築"""
+        tags = current_context.get("tags", [])
+        topics = current_context.get("topics", [])
+
+        merged = []
+        for item in tags + topics:
+            if isinstance(item, str):
+                value = item.strip()
+                if value and value not in merged:
+                    merged.append(value)
+        return merged[:8]
 
 
 # シングルトンインスタンス

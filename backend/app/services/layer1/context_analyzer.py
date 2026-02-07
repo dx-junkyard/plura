@@ -46,7 +46,9 @@ class ContextAnalyzer:
                 "intent": LogIntent,
                 "emotions": List[str],
                 "emotion_scores": Dict[str, float],
-                "topics": List[str]
+                "topics": List[str],
+                "tags": List[str],
+                "metadata_analysis": Dict
             }
         """
         provider = self._get_provider()
@@ -81,7 +83,10 @@ class ContextAnalyzer:
     "intent": "log" | "vent" | "structure",
     "emotions": ["emotion1", "emotion2"],
     "emotion_scores": {"emotion1": 0.8, "emotion2": 0.5},
-    "topics": ["topic1", "topic2"]
+    "topics": ["topic1", "topic2"],
+    "tags": ["Work", "Project-A", "Idea"],
+    "summary": "1行要約",
+    "emotional_score": 0.0
 }
 
 intent の判定基準:
@@ -101,6 +106,8 @@ emotions の選択肢:
 
 topics はビジネス・業務に関連するトピックを抽出してください。
 例: プロジェクト管理、人事評価、技術的負債、顧客対応、チームコミュニケーションなど
+
+tags は再利用可能な短い語を抽出し、カテゴリ（例: Work / Private）と対象（例: Project名 / 技術）を含めてください。
 """
 
     def _build_analysis_prompt(self, content: str) -> str:
@@ -124,17 +131,27 @@ JSON形式で解析結果を返してください。"""
         intent = intent_map.get(intent_str, LogIntent.LOG)
 
         # 感情のパース
-        emotions = result.get("emotions", ["neutral"])
+        emotions = self._normalize_emotions(result.get("emotions", ["neutral"]))
         emotion_scores = result.get("emotion_scores", {})
 
         # トピックのパース
-        topics = result.get("topics", [])
+        topics = self._normalize_string_list(result.get("topics", []), max_items=10)
+        tags = self._normalize_tags(result.get("tags", []), topics=topics)
+        summary = str(result.get("summary", "")).strip()
+        emotional_score = result.get("emotional_score")
+        if not isinstance(emotional_score, (int, float)):
+            emotional_score = None
 
         return {
             "intent": intent,
             "emotions": emotions,
             "emotion_scores": emotion_scores,
             "topics": topics,
+            "tags": tags,
+            "metadata_analysis": {
+                "summary": summary,
+                "emotional_score": emotional_score,
+            },
         }
 
     def _fallback_analyze(self, content: str) -> Dict:
@@ -179,12 +196,62 @@ JSON形式で解析結果を返してください。"""
         else:
             intent = LogIntent.LOG
 
+        topics: List[str] = []
+        tags = self._fallback_tags(content)
+
         return {
             "intent": intent,
             "emotions": emotions,
             "emotion_scores": emotion_scores,
-            "topics": [],  # シンプル解析ではトピック抽出なし
+            "topics": topics,
+            "tags": tags,
+            "metadata_analysis": {
+                "summary": content[:80].strip(),
+                "emotional_score": None,
+            },
         }
+
+    def _normalize_string_list(self, values: object, max_items: int = 10) -> List[str]:
+        if not isinstance(values, list):
+            return []
+
+        normalized: List[str] = []
+        for value in values:
+            if not isinstance(value, str):
+                continue
+            item = value.strip()
+            if not item:
+                continue
+            if item not in normalized:
+                normalized.append(item)
+            if len(normalized) >= max_items:
+                break
+        return normalized
+
+    def _normalize_emotions(self, values: object) -> List[str]:
+        allowed = {emotion.value for emotion in EmotionTag}
+        emotions = self._normalize_string_list(values, max_items=3)
+        normalized = [emotion for emotion in emotions if emotion in allowed]
+        return normalized or ["neutral"]
+
+    def _normalize_tags(self, values: object, topics: Optional[List[str]] = None) -> List[str]:
+        tags = self._normalize_string_list(values, max_items=8)
+        if topics:
+            for topic in topics:
+                if topic not in tags and len(tags) < 8:
+                    tags.append(topic)
+        if not tags:
+            tags = ["Uncategorized"]
+        return tags
+
+    def _fallback_tags(self, content: str) -> List[str]:
+        work_keywords = ["案件", "プロジェクト", "会議", "顧客", "開発", "仕様", "タスク", "仕事"]
+        idea_keywords = ["アイデア", "仮説", "案", "改善", "試したい"]
+
+        tags = ["Work" if any(kw in content for kw in work_keywords) else "Private"]
+        if any(kw in content for kw in idea_keywords):
+            tags.append("Idea")
+        return tags
 
 
 # シングルトンインスタンス

@@ -143,6 +143,7 @@ class KnowledgeStore:
         query: str,
         limit: int = 5,
         score_threshold: float = 0.7,
+        filter_tags: Optional[List[str]] = None,
     ) -> List[Dict]:
         """
         類似インサイトを検索
@@ -151,6 +152,7 @@ class KnowledgeStore:
             query: 検索クエリ
             limit: 取得件数
             score_threshold: 類似度の閾値
+            filter_tags: 検索対象を絞り込むタグ（OR条件）
 
         Returns:
             類似インサイトのリスト
@@ -168,11 +170,24 @@ class KnowledgeStore:
             return []
 
         try:
+            query_filter = None
+            normalized_tags = self._normalize_filter_tags(filter_tags)
+            if normalized_tags:
+                query_filter = models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="tags",
+                            match=models.MatchAny(any=normalized_tags),
+                        )
+                    ]
+                )
+
             results = self.qdrant_client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding,
                 limit=limit,
                 score_threshold=score_threshold,
+                query_filter=query_filter,
             )
 
             return [
@@ -189,6 +204,19 @@ class KnowledgeStore:
 
         except Exception as e:
             return []
+
+    def _normalize_filter_tags(self, tags: Optional[List[str]]) -> List[str]:
+        if not tags:
+            return []
+
+        normalized: List[str] = []
+        for tag in tags:
+            if not isinstance(tag, str):
+                continue
+            value = tag.strip()
+            if value and value not in normalized:
+                normalized.append(value)
+        return normalized
 
     def _build_search_text(self, insight: Dict) -> str:
         """検索用テキストを構築"""

@@ -25,9 +25,9 @@ services:
     image: postgres:16-alpine
     container_name: mindyard-postgres
     environment:
-      POSTGRES_USER: mindyard
-      POSTGRES_PASSWORD: mindyard
-      POSTGRES_DB: mindyard
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -62,7 +62,7 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
-      QDRANT__LOG_LEVEL: INFO
+      QDRANT__LOG_LEVEL: ${QDRANT__LOG_LEVEL}
 
   # Backend API (FastAPI)
   backend:
@@ -71,21 +71,21 @@ services:
       dockerfile: Dockerfile
     container_name: mindyard-backend
     environment:
-      DATABASE_URL: postgresql+asyncpg://mindyard:mindyard@postgres:5432/mindyard
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND: redis://redis:6379/2
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6333
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      QDRANT_HOST: ${QDRANT_HOST}
+      QDRANT_PORT: ${QDRANT_PORT}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ENVIRONMENT: development
-      DEBUG: "true"
+      ENVIRONMENT: ${ENVIRONMENT}
+      DEBUG: ${DEBUG}
       # バックエンドから見た自分自身のURLを環境変数で設定
-      API_PUBLIC_URL: https://${NGHOST}/api/v1
+      API_PUBLIC_URL: ${API_PUBLIC_URL}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
       # Google Cloud / Vertex AI
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
-      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
       VERTEX_PROJECT_ID: ${VERTEX_PROJECT_ID:-}
       VERTEX_LOCATION: ${VERTEX_LOCATION:-us-central1}
       # LLM Configuration (Multi-Provider)
@@ -114,16 +114,16 @@ services:
       dockerfile: Dockerfile
     container_name: mindyard-celery-worker
     environment:
-      DATABASE_URL: postgresql+asyncpg://mindyard:mindyard@postgres:5432/mindyard
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND: redis://redis:6379/2
-      QDRANT_HOST: qdrant
-      QDRANT_PORT: 6333
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      QDRANT_HOST: ${QDRANT_HOST}
+      QDRANT_PORT: ${QDRANT_PORT}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Google Cloud / Vertex AI
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
-      GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
       VERTEX_PROJECT_ID: ${VERTEX_PROJECT_ID:-}
       VERTEX_LOCATION: ${VERTEX_LOCATION:-us-central1}
       # LLM Configuration (Multi-Provider)
@@ -148,9 +148,7 @@ services:
       dockerfile: Dockerfile
     container_name: mindyard-frontend
     environment:
-      # NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
-      # フロントエンドから見たAPIの向き先を環境変数で設定
-      - NEXT_PUBLIC_API_URL=https://${NGHOST}/api/v1
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     ports:
       - "3000:3000"
     depends_on:

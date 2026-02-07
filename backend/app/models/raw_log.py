@@ -101,6 +101,15 @@ class RawLog(Base):
         ARRAY(String(100)),
         nullable=True,
     )
+    tags: Mapped[Optional[List[str]]] = mapped_column(
+        ARRAY(String(50)),
+        nullable=True,
+    )
+    metadata_analysis: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment="ContextAnalyzer による構造化メタデータ",
+    )
 
     # Structural Analyzer による構造的分析結果
     structural_analysis: Mapped[Optional[dict]] = mapped_column(
