@@ -3,14 +3,16 @@ MINDYARD - Celery Tasks
 Layer 2 の非同期処理タスク
 """
 import asyncio
+import logging
 from typing import Optional
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.workers.celery_app import celery_app
-from app.db.base import async_session_maker
+from app.db.base import async_session_maker, engine
 from app.models.raw_log import RawLog
 from app.models.insight import InsightCard, InsightStatus
 from app.services.layer1.context_analyzer import context_analyzer
@@ -19,6 +21,8 @@ from app.services.layer2.insight_distiller import insight_distiller
 from app.services.layer2.sharing_broker import sharing_broker
 from app.services.layer2.structural_analyzer import structural_analyzer
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def run_async(coro):
@@ -40,6 +44,10 @@ def analyze_log_context(self, log_id: str):
     ログの感情・トピック・インテントを解析
     """
     async def _analyze():
+        # Ensure engine connection pool is clean for this process/task
+        # This prevents issues with inherited connections in forked processes
+        await engine.dispose()
+
         async with async_session_maker() as session:
             # ログを取得
             result = await session.execute(
@@ -48,12 +56,15 @@ def analyze_log_context(self, log_id: str):
             log = result.scalar_one_or_none()
 
             if not log:
+                logger.error(f"Log not found for context analysis: {log_id}")
                 return {"status": "error", "message": "Log not found"}
 
             if log.is_analyzed:
+                logger.info(f"Log already analyzed for context: {log_id}")
                 return {"status": "skipped", "message": "Already analyzed"}
 
             try:
+                logger.info(f"Starting context analysis for log_id: {log_id}")
                 # 解析実行
                 analysis = await context_analyzer.analyze(log.content)
 
@@ -64,7 +75,12 @@ def analyze_log_context(self, log_id: str):
                 log.topics = analysis.get("topics")
                 log.is_analyzed = True
 
+                # Mark JSON/Array fields as modified to ensure SQLAlchemy detects changes
+                flag_modified(log, "emotion_scores")
+
+                logger.info(f"Committing context analysis for log_id: {log_id}")
                 await session.commit()
+                logger.info(f"Successfully committed context analysis for log_id: {log_id}")
 
                 return {
                     "status": "success",
@@ -74,6 +90,7 @@ def analyze_log_context(self, log_id: str):
                 }
 
             except Exception as e:
+                logger.error(f"Error in analyze_log_context for {log_id}: {str(e)}", exc_info=True)
                 return {"status": "error", "message": str(e)}
 
     return run_async(_analyze())
@@ -89,6 +106,9 @@ def analyze_log_structure(self, log_id: str):
     新しいログの関係性を判定し構造的課題を更新する。
     """
     async def _analyze_structure():
+        # Ensure engine connection pool is clean for this process/task
+        await engine.dispose()
+
         async with async_session_maker() as session:
             # 現在のログを取得
             result = await session.execute(
@@ -97,12 +117,15 @@ def analyze_log_structure(self, log_id: str):
             log = result.scalar_one_or_none()
 
             if not log:
+                logger.error(f"Log not found for structural analysis: {log_id}")
                 return {"status": "error", "message": "Log not found"}
 
             if log.is_structure_analyzed:
+                logger.info(f"Log already analyzed for structure: {log_id}")
                 return {"status": "skipped", "message": "Already analyzed for structure"}
 
             try:
+                logger.info(f"Starting structural analysis for log_id: {log_id}")
                 # Step 1: 履歴取得 - 同じユーザーの直近5件のログを取得（今回のログを除く）
                 history_result = await session.execute(
                     select(RawLog)
@@ -144,9 +167,15 @@ def analyze_log_structure(self, log_id: str):
 
                 # 結果を保存
                 log.structural_analysis = analysis
+                # Explicitly set the completion flag
                 log.is_structure_analyzed = True
 
+                # Mark JSON fields as modified to ensure SQLAlchemy detects changes
+                flag_modified(log, "structural_analysis")
+
+                logger.info(f"Committing structural analysis for log_id: {log_id}")
                 await session.commit()
+                logger.info(f"Successfully committed structural analysis for log_id: {log_id}")
 
                 return {
                     "status": "success",
@@ -157,6 +186,7 @@ def analyze_log_structure(self, log_id: str):
                 }
 
             except Exception as e:
+                logger.error(f"Error in analyze_log_structure for {log_id}: {str(e)}", exc_info=True)
                 return {"status": "error", "message": str(e)}
 
     return run_async(_analyze_structure())
@@ -169,6 +199,9 @@ def process_log_for_insight(self, log_id: str):
     ログを匿名化 → 構造化 → 評価 → 保存
     """
     async def _process():
+        # Ensure engine connection pool is clean for this process/task
+        await engine.dispose()
+
         async with async_session_maker() as session:
             # ログを取得
             result = await session.execute(
@@ -177,12 +210,15 @@ def process_log_for_insight(self, log_id: str):
             log = result.scalar_one_or_none()
 
             if not log:
+                logger.error(f"Log not found for insight processing: {log_id}")
                 return {"status": "error", "message": "Log not found"}
 
             if log.is_processed_for_insight:
+                logger.info(f"Log already processed for insight: {log_id}")
                 return {"status": "skipped", "message": "Already processed"}
 
             try:
+                logger.info(f"Starting insight processing for log_id: {log_id}")
                 # Step 1: Privacy Sanitizer - 匿名化
                 sanitized_content, sanitize_metadata = await privacy_sanitizer.sanitize(
                     log.content
@@ -225,7 +261,10 @@ def process_log_for_insight(self, log_id: str):
                 session.add(insight)
                 log.is_processed_for_insight = True
 
+                logger.info(f"Committing insight processing for log_id: {log_id}")
                 await session.commit()
+                logger.info(f"Successfully committed insight processing for log_id: {log_id}")
+
                 await session.refresh(insight)
 
                 return {
@@ -237,6 +276,7 @@ def process_log_for_insight(self, log_id: str):
                 }
 
             except Exception as e:
+                logger.error(f"Error in process_log_for_insight for {log_id}: {str(e)}", exc_info=True)
                 return {"status": "error", "message": str(e)}
 
     return run_async(_process())
@@ -248,6 +288,9 @@ def process_all_unprocessed_logs():
     未処理のログをすべて処理するバッチタスク
     """
     async def _process_all():
+        # Ensure engine connection pool is clean for this process/task
+        await engine.dispose()
+
         async with async_session_maker() as session:
             # 未処理のログを取得
             result = await session.execute(
