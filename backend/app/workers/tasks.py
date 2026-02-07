@@ -126,6 +126,14 @@ def analyze_log_structure(self, log_id: str):
 
             try:
                 logger.info(f"Starting structural analysis for log_id: {log_id}")
+                # --- Topic overlap filter to avoid irrelevant history ---
+                def _normalize(text: str):
+                    tokens = re.split(r"[^\\wぁ-んァ-ン一-龥]+", text.lower())
+                    stop = {"の", "に", "と", "で", "が", "は", "を", "も", "へ", "and", "or", "the", "a", "an"}
+                    return [t for t in tokens if len(t) > 1 and t not in stop]
+
+                current_tokens = set(_normalize(log.content))
+
                 # Step 1: 履歴取得 - 同じユーザーの直近5件のログを取得（今回のログを除く）
                 history_result = await session.execute(
                     select(RawLog)
@@ -136,7 +144,15 @@ def analyze_log_structure(self, log_id: str):
                     .order_by(RawLog.created_at.desc())
                     .limit(5)
                 )
-                past_logs = history_result.scalars().all()
+                candidates = history_result.scalars().all()
+
+                past_logs = []
+                for prev in candidates:
+                    overlap = current_tokens & set(_normalize(prev.content))
+                    if overlap:
+                        past_logs.append(prev)
+                    else:
+                        logger.info(f"[structural] skip history log {prev.id} (no topical overlap)")
 
                 # Step 2: 前回仮説の抽出
                 previous_hypothesis = None

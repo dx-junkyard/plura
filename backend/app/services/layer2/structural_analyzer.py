@@ -10,6 +10,7 @@ Layer 2: 文脈依存型・構造的理解アップデート機能
 """
 from typing import Dict, List, Optional
 from enum import Enum
+import re
 
 from app.core.llm import llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
@@ -103,7 +104,14 @@ class StructuralAnalyzer:
 ユーザーの入力を、過去の会話コンテキストを踏まえて分析し、
 「構造的課題」を特定・更新していきます。
 
-分析は以下の3ステップで行ってください:
+分析は以下の手順で行ってください:
+
+## Step 0: インタラクション判定
+今回の入力が以下のどれに当たるか判断してください（複数可だが主要なものを1つ選ぶ）:
+- QUESTION: 具体的な情報ややり方を尋ねている
+- BRAINSTORM: アイデア出し・検討・選択肢を探している
+- REFLECTION: 思考整理・振り返り・自分の考えを深めたい
+- OTHER: 上記以外
 
 ## Step 1: 関係性判定 (Relationship Classification)
 今回の入力は、直前の仮説に対してどのような関係にあるか判定してください。
@@ -132,8 +140,16 @@ class StructuralAnalyzer:
     "relationship_type": "ADDITIVE" | "PARALLEL" | "CORRECTION" | "NEW",
     "relationship_reason": "判定理由の説明",
     "updated_structural_issue": "更新された構造的課題の定義",
-    "probing_question": "深掘りのための問い"
-}"""
+    "probing_question": "QUESTIONの場合はできる限り具体的な回答、もしくは3つ以内の調査手順。その他の場合は深掘りのための問い。"
+}
+
+重要: 「問い」を作る際は次を守ってください。
+- 決まり文句を避け、ユーザーの言葉や話題を1つ以上含める。
+- 指示語だけにせず、何についての問い/回答かを明示する。
+- 共感的で圧迫感のないトーンにする。
+- QUESTIONの場合: まず簡潔に答えられる範囲で答える。確信が持てないときは「今すぐできる調べ方」を2〜3個、具体的キーワード付きで提案する。
+- BRAINSTORM/REFLECTIONの場合: 新しい洞察が出るように理由・背景・具体的状況を尋ねる。
+"""
 
     def _build_analysis_prompt(
         self,
@@ -176,13 +192,25 @@ class StructuralAnalyzer:
         relationship_type = result.get("relationship_type", "NEW")
         if relationship_type not in [e.value for e in RelationshipType]:
             relationship_type = RelationshipType.NEW.value
+        probing = result.get("probing_question") or ""
+        issue = result.get("updated_structural_issue") or ""
 
         return {
             "relationship_type": relationship_type,
             "relationship_reason": result.get("relationship_reason", ""),
-            "updated_structural_issue": result.get("updated_structural_issue", ""),
-            "probing_question": result.get("probing_question", ""),
+            "updated_structural_issue": issue,
+            "probing_question": probing,
         }
+
+    def _is_question(self, text: str) -> bool:
+        """簡易的に質問かどうかを判定"""
+        text = text.strip()
+        if not text:
+            return False
+        question_mark = "?" in text or "？" in text
+        question_words = ["何", "なに", "どう", "どのよう", "なぜ", "教えて", "方法", "手順", "とは", "仕組み", "使い方"]
+        has_word = any(w in text for w in question_words)
+        return question_mark or has_word
 
     def _fallback_analyze(
         self,
@@ -190,14 +218,22 @@ class StructuralAnalyzer:
         previous_hypothesis: Optional[str],
     ) -> Dict:
         """LLMが利用できない場合のフォールバック"""
-        # シンプルなルールベース分析
+        # シンプルなルールベース分析＋質問時のガイド
+        is_q = self._is_question(current_log)
+
         if not previous_hypothesis:
             # 初回の場合は NEW
+            simple_issue = self._extract_simple_issue(current_log)
+            probing = (
+                f"「{simple_issue}」について、今いちばん知りたいことや困っている場面はどこですか？"
+                if not is_q
+                else f"今すぐできる調べ方:\n1) 公式/信頼できるドキュメントで「{simple_issue}」を検索\n2) 事例ブログで『{simple_issue} とは』『{simple_issue} 仕組み』を調べる\n3) わかったことを一文でまとめてから次の疑問を洗い出す"
+            )
             return {
                 "relationship_type": RelationshipType.NEW.value,
                 "relationship_reason": "初回の入力のため新規トピックとして扱う",
-                "updated_structural_issue": self._extract_simple_issue(current_log),
-                "probing_question": "この状況について、もう少し詳しく教えていただけますか？",
+                "updated_structural_issue": simple_issue,
+                "probing_question": probing,
             }
 
         # 簡単なキーワードマッチング
@@ -208,28 +244,43 @@ class StructuralAnalyzer:
 
         for kw in correction_keywords:
             if kw in current_log:
+                simple_issue = self._extract_simple_issue(current_log)
                 return {
                     "relationship_type": RelationshipType.CORRECTION.value,
                     "relationship_reason": f"訂正を示唆するキーワード「{kw}」が検出された",
-                    "updated_structural_issue": self._extract_simple_issue(current_log),
-                    "probing_question": "状況が変わったのですね。現在の状態について教えてください。",
+                    "updated_structural_issue": simple_issue,
+                    "probing_question": (
+                        f"「{simple_issue}」になった背景やきっかけを教えてもらえますか？"
+                        if not is_q
+                        else f"変化のポイントをもう少し教えてください。何が変わり、どこで困っていますか？"
+                    ),
                 }
 
         for kw in parallel_keywords:
             if kw in current_log:
+                expanded = f"複数の事例に共通する構造的課題（{previous_hypothesis}の拡張）" if previous_hypothesis else self._extract_simple_issue(current_log)
                 return {
                     "relationship_type": RelationshipType.PARALLEL.value,
                     "relationship_reason": f"並列事例を示唆するキーワード「{kw}」が検出された",
-                    "updated_structural_issue": f"複数の事例に共通する構造的課題（{previous_hypothesis}の拡張）",
-                    "probing_question": "複数の場所で起きているようですね。共通するパターンは何だと思いますか？",
+                    "updated_structural_issue": expanded,
+                    "probing_question": (
+                        f"似たケースが他にもあるとのことですが、「{expanded}」で共通して困る場面は何でしょう？"
+                        if not is_q
+                        else f"複数ケースで共通する論点を1つ挙げるなら何ですか？それを手がかりに調べてみましょう。"
+                    ),
                 }
 
         # デフォルトは ADDITIVE
+        simple_issue = self._extract_simple_issue(current_log)
         return {
             "relationship_type": RelationshipType.ADDITIVE.value,
             "relationship_reason": "前回の話題に関連する追加情報と判断",
-            "updated_structural_issue": previous_hypothesis or self._extract_simple_issue(current_log),
-            "probing_question": "この点についてもう少し掘り下げてみましょう。何が根本的な原因だと思いますか？",
+            "updated_structural_issue": previous_hypothesis or simple_issue,
+            "probing_question": (
+                f"「{previous_hypothesis or simple_issue}」をもう少し具体的にするなら、どんな状況・登場人物が関わっていますか？"
+                if not is_q
+                else f"今わかっていることを一文でまとめるとどうなりますか？次に調べるキーワードを2つ挙げてみてください。"
+            ),
         }
 
     def _extract_simple_issue(self, content: str) -> str:
