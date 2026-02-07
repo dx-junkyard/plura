@@ -37,6 +37,14 @@ export default function TimelinePage() {
     queryKey: ['logs', page],
     queryFn: () => api.getLogs(page, 20),
     enabled: isAuthenticated,
+    // 分析中のログがある場合は3秒おきに自動更新
+    refetchInterval: (query) => {
+      const items = query.state.data?.items;
+      if (items?.some(log => !log.is_analyzed || !log.is_structure_analyzed)) {
+        return 3000;
+      }
+      return false;
+    },
   });
 
   if (!isAuthenticated) {
@@ -85,6 +93,16 @@ export default function TimelinePage() {
                 <p className="text-gray-800 whitespace-pre-wrap mb-3">
                   {log.content}
                 </p>
+
+                {/* 分析ステータス */}
+                {(!log.is_analyzed || !log.is_structure_analyzed) && (
+                  <div className="flex items-center gap-2 text-sm text-blue-600 mb-3">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>
+                      {!log.is_analyzed ? '文脈を分析中...' : '構造を分析中...'}
+                    </span>
+                  </div>
+                )}
 
                 {/* メタデータ */}
                 <div className="flex flex-wrap gap-2 mb-3">

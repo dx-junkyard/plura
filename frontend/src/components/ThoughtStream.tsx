@@ -41,8 +41,7 @@ export function ThoughtStream() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [pendingLogId, setPendingLogId] = useState<string | null>(null);
-  const [isWaitingForAnalysis, setIsWaitingForAnalysis] = useState(false);
+  const [pendingLogIds, setPendingLogIds] = useState<string[]>([]);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [analysisSteps, setAnalysisSteps] = useState<AnalysisStep[]>([]);
   const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false);
@@ -51,10 +50,14 @@ export function ThoughtStream() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const debounceRef = useRef<NodeJS.Timeout>();
   const pollingRef = useRef<NodeJS.Timeout>();
+  const isPollingRef = useRef(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
   const { setRecommendations, clearRecommendations } = useRecommendationStore();
+
+  // 分析待ちのログがあるかどうか（UIの表示制御用）
+  const isWaitingForAnalysis = pendingLogIds.length > 0;
 
   // メッセージ追加時にスクロール
   useEffect(() => {
@@ -72,74 +75,89 @@ export function ThoughtStream() {
     setIsAnalysisExpanded(true);
   }, []);
 
-  // 構造分析結果のポーリング
+  // 構造分析結果のポーリング（複数ログ対応）
   useEffect(() => {
-    if (!pendingLogId) return;
+    if (pendingLogIds.length === 0) return;
 
     const pollForAnalysis = async () => {
+      // 同時実行を防止
+      if (isPollingRef.current) return;
+      isPollingRef.current = true;
+
       try {
-        const log: RawLog = await api.getLog(pendingLogId);
+        const completedIds: string[] = [];
+        const newMessages: Message[] = [];
+        const latestPendingId = pendingLogIds[pendingLogIds.length - 1];
 
-        // 分析状態に応じてステップを更新
-        if (log.is_analyzed && !log.is_structure_analyzed) {
-          setAnalysisSteps((prev) =>
-            prev.map((step) => {
-              if (step.id === 'context') return { ...step, label: '文脈を分析しました (Fast)', status: 'completed' };
-              if (step.id === 'structure') return { ...step, label: '深い思考で構造を分析中... (Deep)', status: 'in_progress' };
-              return step;
-            })
-          );
-        }
+        for (const logId of pendingLogIds) {
+          try {
+            const log: RawLog = await api.getLog(logId);
 
-        if (log.is_structure_analyzed && log.structural_analysis?.probing_question) {
-          // モデル情報を取得
-          const modelInfo = log.structural_analysis.model_info;
-          const isReasoning = modelInfo?.is_reasoning;
+            // 最新のログに対してはステップ表示を更新
+            if (logId === latestPendingId) {
+              if (log.is_analyzed && !log.is_structure_analyzed) {
+                setAnalysisSteps((prev) =>
+                  prev.map((step) => {
+                    if (step.id === 'context') return { ...step, label: '文脈を分析しました (Fast)', status: 'completed' };
+                    if (step.id === 'structure') return { ...step, label: '深い思考で構造を分析中... (Deep)', status: 'in_progress' };
+                    return step;
+                  })
+                );
+              }
+            }
 
-          // すべてのステップを完了に
-          setAnalysisSteps((prev) =>
-            prev.map((step) => ({
-              ...step,
-              status: 'completed',
-              label: step.id === 'context' ? '文脈を分析しました (Fast)' :
-                     step.id === 'structure' ? `構造を深く分析しました${isReasoning ? ' (Reasoning)' : ' (Deep)'}` :
-                     step.id === 'question' ? '深掘りの問いを生成しました' : step.label,
-            }))
-          );
+            if (log.is_structure_analyzed && log.structural_analysis?.probing_question) {
+              completedIds.push(logId);
 
-          // 分析完了 - AIの問いかけを表示
-          const aiMessage: Message = {
-            id: `ai-${log.id}`,
-            type: 'ai-question',
-            content: log.structural_analysis.probing_question,
-            timestamp: new Date(),
-            logId: log.id,
-            relationshipType: log.structural_analysis.relationship_type,
-            structuralAnalysis: log.structural_analysis,
-          };
+              // 最新のログのステップ表示を完了に
+              if (logId === latestPendingId) {
+                const modelInfo = log.structural_analysis.model_info;
+                const isReasoning = modelInfo?.is_reasoning;
 
-          setMessages((prev) => [...prev, aiMessage]);
-          setPendingLogId(null);
-          setIsWaitingForAnalysis(false);
+                setAnalysisSteps((prev) =>
+                  prev.map((step) => ({
+                    ...step,
+                    status: 'completed',
+                    label: step.id === 'context' ? '文脈を分析しました (Fast)' :
+                           step.id === 'structure' ? `構造を深く分析しました${isReasoning ? ' (Reasoning)' : ' (Deep)'}` :
+                           step.id === 'question' ? '深掘りの問いを生成しました' : step.label,
+                  }))
+                );
+              }
 
-          // ポーリング停止
-          if (pollingRef.current) {
-            clearInterval(pollingRef.current);
-            pollingRef.current = undefined;
+              // 分析完了 - AIの問いかけをメッセージに追加
+              const aiMessage: Message = {
+                id: `ai-${log.id}`,
+                type: 'ai-question',
+                content: log.structural_analysis.probing_question,
+                timestamp: new Date(),
+                logId: log.id,
+                relationshipType: log.structural_analysis.relationship_type,
+                structuralAnalysis: log.structural_analysis,
+              };
+              newMessages.push(aiMessage);
+            }
+          } catch (error: any) {
+            console.error('Polling error:', error);
+            // 404 Not Found の場合はポーリング対象から除外
+            if (error.response && error.response.status === 404) {
+              completedIds.push(logId);
+            }
           }
         }
-      } catch (error: any) {
-        console.error('Polling error:', error);
-        // 404 Not Found の場合は、ログが存在しないためポーリングを停止する
-        if (error.response && error.response.status === 404) {
-          setPendingLogId(null);
-          setIsWaitingForAnalysis(false);
-          setAnalysisSteps([]);
-          if (pollingRef.current) {
-            clearInterval(pollingRef.current);
-            pollingRef.current = undefined;
-          }
+
+        if (newMessages.length > 0) {
+          setMessages((prev) => [...prev, ...newMessages]);
         }
+
+        if (completedIds.length > 0) {
+          setPendingLogIds((prev) => {
+            const filtered = prev.filter((id) => !completedIds.includes(id));
+            return filtered.length === prev.length ? prev : filtered;
+          });
+        }
+      } finally {
+        isPollingRef.current = false;
       }
     };
 
@@ -155,7 +173,7 @@ export function ThoughtStream() {
         clearInterval(pollingRef.current);
       }
     };
-  }, [pendingLogId]);
+  }, [pendingLogIds]);
 
   // 入力変更時にレコメンデーションを取得
   const fetchRecommendations = useCallback(async (text: string) => {
@@ -219,8 +237,7 @@ export function ThoughtStream() {
       setMessages((prev) => [...prev, systemMessage]);
 
       // 構造分析のポーリングを開始
-      setPendingLogId(response.log_id);
-      setIsWaitingForAnalysis(true);
+      setPendingLogIds(prev => [...prev, response.log_id]);
       initializeAnalysisSteps();
     } catch (error) {
       const errorMessage: Message = {
@@ -388,8 +405,7 @@ MINDYARD で思考を整理しました`;
       });
 
       // 構造分析のポーリングを開始
-      setPendingLogId(response.log_id);
-      setIsWaitingForAnalysis(true);
+      setPendingLogIds(prev => [...prev, response.log_id]);
       initializeAnalysisSteps();
     } catch (error) {
       console.error('音声送信エラー:', error);

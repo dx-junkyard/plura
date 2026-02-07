@@ -82,7 +82,7 @@ services:
       DEBUG: "true"
       # バックエンドから見た自分自身のURLを環境変数で設定
       API_PUBLIC_URL: https://${NGHOST}/api/v1
-      ALLOWED_ORIGINS: https://${NGHOST}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
       # Google Cloud / Vertex AI
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_APPLICATION_CREDENTIALS: /root/.config/gcloud/application_default_credentials.json
