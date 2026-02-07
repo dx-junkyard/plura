@@ -115,7 +115,10 @@ class ApiClient {
   }
 
   async getLog(logId: string): Promise<RawLog> {
-    const { data } = await this.client.get<RawLog>(`/logs/${logId}`);
+    const { data } = await this.client.get<RawLog>(`/logs/${logId}`, {
+      params: { _t: Date.now() },  // キャッシュバスティング（ブラウザキャッシュ回避）
+      headers: { 'Cache-Control': 'no-cache' },
+    });
     return data;
   }
 

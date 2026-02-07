@@ -84,6 +84,8 @@ export function ThoughtStream() {
       if (isPollingRef.current) return;
       isPollingRef.current = true;
 
+      console.log('[Polling] Start polling for pendingLogIds:', pendingLogIds);
+
       try {
         const completedIds: string[] = [];
         const newMessages: Message[] = [];
@@ -91,11 +93,19 @@ export function ThoughtStream() {
 
         for (const logId of pendingLogIds) {
           try {
+            console.log(`[Polling] Fetching log: ${logId}`);
             const log: RawLog = await api.getLog(logId);
+            console.log(`[Polling] Response for ${logId}:`, {
+              is_analyzed: log.is_analyzed,
+              is_structure_analyzed: log.is_structure_analyzed,
+              has_structural_analysis: !!log.structural_analysis,
+              has_probing_question: !!log.structural_analysis?.probing_question,
+            });
 
             // 最新のログに対してはステップ表示を更新
             if (logId === latestPendingId) {
               if (log.is_analyzed && !log.is_structure_analyzed) {
+                console.log(`[Polling] Advancing to structure step for ${logId}`);
                 setAnalysisSteps((prev) =>
                   prev.map((step) => {
                     if (step.id === 'context') return { ...step, label: '文脈を分析しました (Fast)', status: 'completed' };
@@ -107,6 +117,7 @@ export function ThoughtStream() {
             }
 
             if (log.is_structure_analyzed && log.structural_analysis?.probing_question) {
+              console.log(`[Polling] Analysis complete for ${logId}: ${log.structural_analysis.probing_question}`);
               completedIds.push(logId);
 
               // 最新のログのステップ表示を完了に
@@ -138,7 +149,7 @@ export function ThoughtStream() {
               newMessages.push(aiMessage);
             }
           } catch (error: any) {
-            console.error('Polling error:', error);
+            console.error(`[Polling] Error fetching log ${logId}:`, error?.response?.status, error?.response?.data || error?.message || error);
             // 404 Not Found の場合はポーリング対象から除外
             if (error.response && error.response.status === 404) {
               completedIds.push(logId);
@@ -147,10 +158,12 @@ export function ThoughtStream() {
         }
 
         if (newMessages.length > 0) {
+          console.log(`[Polling] Adding ${newMessages.length} AI messages`);
           setMessages((prev) => [...prev, ...newMessages]);
         }
 
         if (completedIds.length > 0) {
+          console.log(`[Polling] Removing completed IDs:`, completedIds);
           setPendingLogIds((prev) => {
             const filtered = prev.filter((id) => !completedIds.includes(id));
             return filtered.length === prev.length ? prev : filtered;
@@ -167,11 +180,14 @@ export function ThoughtStream() {
     // 3秒おきにポーリング
     pollingRef.current = setInterval(pollForAnalysis, 3000);
 
-    // クリーンアップ
+    // クリーンアップ（React StrictMode の二重実行対策含む）
     return () => {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
       }
+      // Strict Mode で unmount → remount される場合に
+      // 前回の pollForAnalysis が実行中でもロックを解除する
+      isPollingRef.current = false;
     };
   }, [pendingLogIds]);
 

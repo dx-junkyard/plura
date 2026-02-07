@@ -116,7 +116,13 @@ class Settings(BaseSettings):
     @field_validator("backend_cors_origins", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Any) -> List[str]:
+        # デフォルトのCORSオリジン（開発環境用、常に含める）
+        default_origins = ["http://localhost:3000", "http://localhost:8000"]
+
         if isinstance(v, str):
+            if not v.strip():
+                # 空文字列の場合はデフォルトを使用
+                return default_origins
             # Try JSON list first: '["http://localhost:3000", "https://example.com"]'
             if v.startswith("["):
                 try:
@@ -126,7 +132,8 @@ class Settings(BaseSettings):
                 except json.JSONDecodeError:
                     pass
             # Fall back to comma-separated: "http://localhost:3000,https://example.com"
-            return [origin.strip().rstrip("/") for origin in v.split(",") if origin.strip()]
+            origins = [origin.strip().rstrip("/") for origin in v.split(",") if origin.strip()]
+            return origins if origins else default_origins
         if isinstance(v, list):
             return [str(item).strip().rstrip("/") for item in v]
         return v

@@ -4,9 +4,11 @@ Layer 1: Private Logger API
 """
 from datetime import datetime
 from typing import Optional
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi.responses import JSONResponse
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from openai import AsyncOpenAI
@@ -24,6 +26,8 @@ from app.schemas.raw_log import (
 from app.services.layer1.context_analyzer import context_analyzer
 from app.workers.tasks import analyze_log_structure
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -80,9 +84,15 @@ async def create_log(
     # Celery タスクとしてバックグラウンドで実行
     try:
         analyze_log_structure.delay(str(log.id))
-    except Exception:
+        logger.info(f"[POST /logs/] Celery task queued for log_id={log.id}")
+    except Exception as e:
         # タスクキューが利用不可でもログ作成は成功させる
-        pass
+        logger.warning(f"[POST /logs/] Failed to queue Celery task: {e}")
+
+    logger.info(
+        f"[POST /logs/] Returning AckResponse: log_id={log.id}, "
+        f"is_analyzed={log.is_analyzed}, intent={log.intent}"
+    )
 
     # 受容的な相槌を返す
     return AckResponse.create_ack(log_id=log.id, intent=log.intent)
@@ -131,6 +141,7 @@ async def get_log(
     current_user: User = Depends(get_current_user),
 ):
     """特定のログを取得"""
+    logger.info(f"[GET /logs/{log_id}] Request received from user={current_user.id}")
     result = await session.execute(
         select(RawLog).where(
             RawLog.id == log_id,
@@ -140,12 +151,36 @@ async def get_log(
     log = result.scalar_one_or_none()
 
     if not log:
+        logger.warning(f"[GET /logs/{log_id}] Log not found for user={current_user.id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Log not found",
         )
 
-    return RawLogResponse.model_validate(log)
+    logger.info(
+        f"[GET /logs/{log_id}] DB state: "
+        f"is_analyzed={log.is_analyzed}, "
+        f"is_structure_analyzed={log.is_structure_analyzed}, "
+        f"intent={log.intent}, "
+        f"has_structural_analysis={log.structural_analysis is not None}, "
+        f"has_probing_question={bool(log.structural_analysis and log.structural_analysis.get('probing_question'))}"
+    )
+
+    try:
+        response_data = RawLogResponse.model_validate(log)
+        logger.info(
+            f"[GET /logs/{log_id}] Response serialized OK: "
+            f"is_analyzed={response_data.is_analyzed}, "
+            f"is_structure_analyzed={response_data.is_structure_analyzed}"
+        )
+        # Cache-Control: ポーリングでブラウザキャッシュが使われないようにする
+        return JSONResponse(
+            content=response_data.model_dump(mode="json"),
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+        )
+    except Exception as e:
+        logger.error(f"[GET /logs/{log_id}] Serialization error: {type(e).__name__}: {e}")
+        raise
 
 
 @router.delete("/{log_id}", status_code=status.HTTP_204_NO_CONTENT)

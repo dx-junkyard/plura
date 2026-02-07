@@ -2,6 +2,7 @@
 MINDYARD - FastAPI Application
 メインアプリケーションエントリーポイント
 """
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -28,12 +29,14 @@ structlog.configure(
 )
 
 logger = structlog.get_logger()
+py_logger = logging.getLogger("mindyard.app")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """アプリケーションのライフサイクル管理"""
     logger.info("Starting MINDYARD application", version=settings.app_version)
+    py_logger.info(f"[CORS] Configured allow_origins: {settings.backend_cors_origins}")
 
     # データベーステーブルの作成（開発用）
     if settings.environment == "development":
@@ -63,7 +66,51 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS設定
+
+# CORSデバッグ用 Pure ASGI Middleware（BaseHTTPMiddlewareを避ける）
+class CORSDebugMiddleware:
+    """CORS のデバッグ用ミドルウェア: リクエストの Origin と レスポンスの CORS ヘッダーをログ出力"""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        method = scope.get("method", "")
+
+        # /api/ パスのリクエストのみデバッグログ
+        if "/api/" not in path:
+            await self.app(scope, receive, send)
+            return
+
+        # Origin ヘッダーを取得
+        headers = dict(scope.get("headers", []))
+        origin = headers.get(b"origin", b"(none)").decode("utf-8", errors="replace")
+        py_logger.info(f"[CORS-Debug] {method} {path} | Origin: {origin}")
+
+        # レスポンスのヘッダーをキャプチャ
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                resp_headers = dict(message.get("headers", []))
+                acao = resp_headers.get(
+                    b"access-control-allow-origin", b"(missing)"
+                ).decode("utf-8", errors="replace")
+                status = message.get("status", "?")
+                py_logger.info(
+                    f"[CORS-Debug] {method} {path} -> {status} | "
+                    f"ACAO: {acao}"
+                )
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
+# ミドルウェアは後に追加したものが外側になる
+# CORSMiddleware → CORSDebugMiddleware の順（CORS処理後のヘッダーを確認する）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.backend_cors_origins,
@@ -71,6 +118,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(CORSDebugMiddleware)
 
 # APIルーターの登録
 app.include_router(api_router, prefix=settings.api_v1_prefix)
