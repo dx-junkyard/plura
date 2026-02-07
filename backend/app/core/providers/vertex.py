@@ -7,6 +7,8 @@ import re
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
 from pydantic import BaseModel
+from google import genai
+from google.genai import types
 
 from app.core.llm_provider import (
     LLMProvider,
@@ -64,7 +66,7 @@ class VertexAIProvider(LLMProvider):
         super().__init__(config)
         self._project_id = project_id
         self._location = location
-        self._model = None
+        self._client: Optional[genai.Client] = None
 
     @property
     def provider_type(self) -> ProviderType:
@@ -76,39 +78,27 @@ class VertexAIProvider(LLMProvider):
             return
 
         try:
-            import vertexai
-            from vertexai.generative_models import GenerativeModel
-
             # Vertex AIの初期化
-            # project_idが指定されていない場合はADC（Application Default Credentials）を使用
-            if self._project_id:
-                vertexai.init(project=self._project_id, location=self._location)
-            else:
-                # ADCから自動的にプロジェクトを検出
-                vertexai.init(location=self._location)
-
-            # モデルの初期化
-            self._model = GenerativeModel(self.config.model)
+            self._client = genai.Client(
+                vertexai=True,
+                project=self._project_id,
+                location=self._location
+            )
             self._initialized = True
 
-        except ImportError:
-            raise ImportError(
-                "google-cloud-aiplatform package is required for Vertex AI provider. "
-                "Install it with: pip install google-cloud-aiplatform"
-            )
         except Exception as e:
             raise RuntimeError(f"Failed to initialize Vertex AI: {e}")
 
     @property
-    def model(self):
-        """初期化済みモデルを取得"""
-        if self._model is None:
+    def client(self) -> genai.Client:
+        """初期化済みクライアントを取得"""
+        if self._client is None:
             raise RuntimeError("Provider not initialized. Call initialize() first.")
-        return self._model
+        return self._client
 
     def _convert_messages_to_gemini_format(
         self, messages: List[Dict[str, str]]
-    ) -> tuple[Optional[str], List[Dict[str, Any]]]:
+    ) -> tuple[Optional[str], List[types.Content]]:
         """
         OpenAI形式のメッセージをGemini形式に変換
 
@@ -126,15 +116,15 @@ class VertexAIProvider(LLMProvider):
                 # システムメッセージはsystem_instructionとして扱う
                 system_instruction = content
             elif role == "assistant":
-                contents.append({
-                    "role": "model",
-                    "parts": [{"text": content}],
-                })
+                contents.append(types.Content(
+                    role="model",
+                    parts=[types.Part(text=content)],
+                ))
             else:  # user
-                contents.append({
-                    "role": "user",
-                    "parts": [{"text": content}],
-                })
+                contents.append(types.Content(
+                    role="user",
+                    parts=[types.Part(text=content)],
+                ))
 
         return system_instruction, contents
 
@@ -147,26 +137,18 @@ class VertexAIProvider(LLMProvider):
         """テキスト生成"""
         await self.initialize()
 
-        from vertexai.generative_models import GenerationConfig, GenerativeModel
-
         system_instruction, contents = self._convert_messages_to_gemini_format(messages)
 
-        # モデルを再作成（system_instructionを設定するため）
-        model = GenerativeModel(
-            self.config.model,
+        config = types.GenerateContentConfig(
+            temperature=temperature or self.config.temperature,
+            max_output_tokens=max_tokens or self.config.max_tokens,
             system_instruction=system_instruction,
         )
 
-        # 生成設定
-        generation_config = GenerationConfig(
-            temperature=temperature or self.config.temperature,
-            max_output_tokens=max_tokens or self.config.max_tokens,
-        )
-
-        # 非同期で生成
-        response = await model.generate_content_async(
-            contents,
-            generation_config=generation_config,
+        response = await self.client.models.generate_content_async(
+            model=self.config.model,
+            contents=contents,
+            config=config,
         )
 
         content = response.text if response.text else ""
@@ -194,8 +176,6 @@ class VertexAIProvider(LLMProvider):
         """JSON形式での出力生成"""
         await self.initialize()
 
-        from vertexai.generative_models import GenerationConfig, GenerativeModel
-
         system_instruction, contents = self._convert_messages_to_gemini_format(messages)
 
         # JSON出力の指示を追加
@@ -204,32 +184,31 @@ class VertexAIProvider(LLMProvider):
         else:
             system_instruction = "必ず有効なJSON形式で回答してください。余計なテキストは含めないでください。"
 
-        model = GenerativeModel(
-            self.config.model,
+        config = types.GenerateContentConfig(
+            temperature=temperature or self.config.temperature,
+            response_mime_type="application/json",  # Gemini のJSON mode
             system_instruction=system_instruction,
         )
 
-        generation_config = GenerationConfig(
-            temperature=temperature or self.config.temperature,
-            response_mime_type="application/json",  # Gemini のJSON mode
-        )
-
         try:
-            response = await model.generate_content_async(
-                contents,
-                generation_config=generation_config,
+            response = await self.client.models.generate_content_async(
+                model=self.config.model,
+                contents=contents,
+                config=config,
             )
             content = response.text if response.text else "{}"
             return json.loads(content)
 
         except Exception:
             # JSON modeが失敗した場合、通常のテキスト生成でJSON抽出を試みる
-            generation_config = GenerationConfig(
+            config = types.GenerateContentConfig(
                 temperature=temperature or self.config.temperature,
+                system_instruction=system_instruction,
             )
-            response = await model.generate_content_async(
-                contents,
-                generation_config=generation_config,
+            response = await self.client.models.generate_content_async(
+                model=self.config.model,
+                contents=contents,
+                config=config,
             )
             content = response.text if response.text else ""
             result = extract_json_from_text(content)
@@ -250,35 +229,24 @@ class VertexAIProvider(LLMProvider):
         """
         await self.initialize()
 
-        from vertexai.generative_models import GenerationConfig, GenerativeModel
-
         system_instruction, contents = self._convert_messages_to_gemini_format(messages)
 
-        # Pydanticスキーマを取得
-        schema = response_model.model_json_schema()
-
-        # スキーマ情報をシステム指示に追加
-        schema_instruction = f"\n\nレスポンスは以下のJSONスキーマに従ってください:\n{json.dumps(schema, ensure_ascii=False, indent=2)}"
-        if system_instruction:
-            system_instruction += schema_instruction
-        else:
-            system_instruction = schema_instruction
-
-        model = GenerativeModel(
-            self.config.model,
+        # google-genaiのresponse_schemaはPydanticモデルクラスを受け取れる
+        config = types.GenerateContentConfig(
+            temperature=temperature or self.config.temperature,
+            response_mime_type="application/json",
+            response_schema=response_model,
             system_instruction=system_instruction,
         )
 
-        generation_config = GenerationConfig(
-            temperature=temperature or self.config.temperature,
-            response_mime_type="application/json",
-        )
-
         try:
-            response = await model.generate_content_async(
-                contents,
-                generation_config=generation_config,
+            response = await self.client.models.generate_content_async(
+                model=self.config.model,
+                contents=contents,
+                config=config,
             )
+            # レスポンスはテキストとして返ってくるが、SDKのバージョンによってはparsedも返る可能性がある。
+            # 一旦textからJSONロードし、validateする
             content = response.text if response.text else "{}"
             data = json.loads(content)
             return response_model.model_validate(data)

@@ -5,6 +5,9 @@ Google Cloud Vertex AIを使用するEmbeddingプロバイダー実装
 import asyncio
 from typing import List, Optional
 
+from google import genai
+from google.genai import types
+
 from app.core.embedding_provider import (
     EmbeddingProvider,
     EmbeddingProviderConfig,
@@ -44,7 +47,7 @@ class VertexAIEmbeddingProvider(EmbeddingProvider):
         super().__init__(config)
         self._project_id = project_id
         self._location = location
-        self._model = None
+        self._client: Optional[genai.Client] = None
 
     @property
     def provider_type(self) -> EmbeddingProviderType:
@@ -63,43 +66,37 @@ class VertexAIEmbeddingProvider(EmbeddingProvider):
             return
 
         try:
-            import vertexai
-            from vertexai.language_models import TextEmbeddingModel
-
             # Vertex AIの初期化
-            if self._project_id:
-                vertexai.init(project=self._project_id, location=self._location)
-            else:
-                vertexai.init(location=self._location)
-
-            # モデルの初期化
-            self._model = TextEmbeddingModel.from_pretrained(self.config.model)
+            self._client = genai.Client(
+                vertexai=True,
+                project=self._project_id,
+                location=self._location
+            )
             self._initialized = True
 
-        except ImportError:
-            raise ImportError(
-                "google-cloud-aiplatform package is required for Vertex AI provider. "
-                "Install it with: pip install google-cloud-aiplatform"
-            )
         except Exception as e:
             raise RuntimeError(f"Failed to initialize Vertex AI Embedding: {e}")
 
     @property
-    def model(self):
-        """初期化済みモデルを取得"""
-        if self._model is None:
+    def client(self) -> genai.Client:
+        """初期化済みクライアントを取得"""
+        if self._client is None:
             raise RuntimeError("Provider not initialized. Call initialize() first.")
-        return self._model
+        return self._client
 
     async def embed_text(self, text: str) -> Optional[List[float]]:
         """単一テキストの埋め込みベクトルを取得"""
         await self.initialize()
 
         try:
-            # Vertex AIのembedding APIは同期的なので、スレッドプールで実行
-            embeddings = await asyncio.to_thread(self.model.get_embeddings, [text])
-            if embeddings and len(embeddings) > 0:
-                return embeddings[0].values
+            # google-genai supports async
+            response = await self.client.models.embed_content_async(
+                model=self.config.model,
+                contents=text,
+            )
+
+            if response.embeddings and len(response.embeddings) > 0:
+                return response.embeddings[0].values
             return None
 
         except Exception:
@@ -117,8 +114,14 @@ class VertexAIEmbeddingProvider(EmbeddingProvider):
 
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i + batch_size]
-                embeddings = await asyncio.to_thread(self.model.get_embeddings, batch)
-                all_embeddings.extend([e.values for e in embeddings])
+
+                response = await self.client.models.embed_content_async(
+                    model=self.config.model,
+                    contents=batch,
+                )
+
+                if response.embeddings:
+                    all_embeddings.extend([e.values for e in response.embeddings])
 
             return all_embeddings
 
