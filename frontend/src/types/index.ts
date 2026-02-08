@@ -106,8 +106,20 @@ export interface SharingProposal {
   original_content_preview: string | null;
 }
 
-// Conversation (LangGraph Dynamic Routing)
-export type ConversationIntent = 'chat' | 'empathy' | 'knowledge' | 'deep_dive' | 'brainstorm';
+// Conversation (LangGraph Hypothesis-Driven Routing)
+export type ConversationIntent = 'chat' | 'empathy' | 'knowledge' | 'deep_dive' | 'brainstorm' | 'probe';
+
+export type PreviousEvaluation = 'positive' | 'negative' | 'pivot' | 'none';
+
+export interface IntentHypothesis {
+  previous_evaluation: PreviousEvaluation;
+  primary_intent: ConversationIntent;
+  primary_confidence: number;
+  secondary_intent: ConversationIntent;
+  secondary_confidence: number;
+  needs_probing: boolean;
+  reasoning: string;
+}
 
 export interface IntentBadge {
   intent: ConversationIntent;

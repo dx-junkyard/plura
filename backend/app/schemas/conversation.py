@@ -1,6 +1,10 @@
 """
 MINDYARD - Conversation Schemas
 LangGraph動的ルーティングのためのスキーマ定義
+
+Hypothesis-Driven Intent Routing:
+    入力 → 即分類 → 実行 の直線的フローから、
+    仮説生成 → 観測（ユーザー反応） → 軌道修正 のループ構造へ。
 """
 import uuid
 from datetime import datetime
@@ -17,6 +21,32 @@ class ConversationIntent(str, Enum):
     KNOWLEDGE = "knowledge"    # 知識要求・質問
     DEEP_DIVE = "deep_dive"    # 課題解決・深掘り
     BRAINSTORM = "brainstorm"  # 発想・アイデア出し
+    PROBE = "probe"            # 意図確認・仮説検証モード
+
+
+class PreviousEvaluation(str, Enum):
+    """前回のインタラクションに対する暗黙的フィードバック評価"""
+    POSITIVE = "positive"   # ユーザーが話題を継続・深掘り・感謝
+    NEGATIVE = "negative"   # ユーザーが回答を無視・質問を再提示・トーン変化
+    PIVOT = "pivot"         # 明示的に別の話題へ移行
+    NONE = "none"           # 前回コンテキストなし（初回ターン）
+
+
+class IntentHypothesis(BaseModel):
+    """仮説駆動型ルーティングの分類結果"""
+    previous_evaluation: PreviousEvaluation = Field(
+        default=PreviousEvaluation.NONE,
+        description="前回インタラクションの暗黙的フィードバック評価",
+    )
+    primary_intent: ConversationIntent = Field(description="最も可能性の高い意図")
+    primary_confidence: float = Field(ge=0.0, le=1.0, description="主仮説の確信度")
+    secondary_intent: ConversationIntent = Field(description="次に可能性の高い意図")
+    secondary_confidence: float = Field(ge=0.0, le=1.0, description="副仮説の確信度")
+    needs_probing: bool = Field(
+        default=False,
+        description="確信度が低く、ユーザーへの確認が必要か",
+    )
+    reasoning: str = Field(default="", description="仮説の根拠")
 
 
 class ConversationRequest(BaseModel):
@@ -77,5 +107,9 @@ INTENT_DISPLAY_MAP = {
     ConversationIntent.BRAINSTORM: {
         "label": "ブレインストーミングモード",
         "icon": "lightbulb",
+    },
+    ConversationIntent.PROBE: {
+        "label": "意図を確認中...",
+        "icon": "radar",
     },
 }
