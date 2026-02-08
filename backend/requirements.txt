@@ -22,6 +22,7 @@ openai>=1.10.0
 langchain>=0.1.12
 langchain-openai>=0.0.8
 langchain-community>=0.0.20
+langgraph>=0.2.0
 tiktoken>=0.5.2
 
 # Google Cloud AI Platform (Vertex AI / Gemini)

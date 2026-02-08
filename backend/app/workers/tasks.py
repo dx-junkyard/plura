@@ -304,6 +304,67 @@ def process_log_for_insight(self, log_id: str):
     return run_async(_process())
 
 
+@celery_app.task(bind=True, max_retries=3)
+def deep_research_task(self, query: str, user_id: str):
+    """
+    Knowledge Node からキックされる非同期調査タスク
+
+    ユーザーの質問に対してDEEPモデルで詳細な調査を行い、
+    結果をCeleryバックエンド経由で返す。
+    将来的にWebSocket通知やDB保存にも対応可能。
+    """
+    async def _research():
+        await engine.dispose()
+
+        try:
+            logger.info(
+                f"Starting deep research for user_id: {user_id}, query: {query[:100]}"
+            )
+
+            from app.core.llm import llm_manager
+            from app.core.llm_provider import LLMUsageRole
+
+            provider = llm_manager.get_client(LLMUsageRole.DEEP)
+            await provider.initialize()
+
+            system_prompt = """あなたは詳細な調査・リサーチを行うアシスタントです。
+以下の質問について、深く掘り下げた包括的な調査レポートを作成してください。
+
+レポートのフォーマット:
+1. 概要: 質問への総合的な回答
+2. 詳細分析: 各論点の掘り下げ
+3. エビデンス: 根拠となる情報・データ
+4. 結論と推奨: まとめと次のアクション
+
+日本語で応答してください。"""
+
+            result = await provider.generate_text(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": query},
+                ],
+                temperature=0.3,
+            )
+
+            logger.info(f"Deep research completed for user_id: {user_id}")
+
+            return {
+                "status": "success",
+                "user_id": user_id,
+                "query": query,
+                "report": result.content,
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error in deep_research_task for user_id {user_id}: {str(e)}",
+                exc_info=True,
+            )
+            return {"status": "error", "message": str(e)}
+
+    return run_async(_research())
+
+
 @celery_app.task
 def process_all_unprocessed_logs():
     """

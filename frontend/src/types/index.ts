@@ -106,6 +106,38 @@ export interface SharingProposal {
   original_content_preview: string | null;
 }
 
+// Conversation (LangGraph Dynamic Routing)
+export type ConversationIntent = 'chat' | 'empathy' | 'knowledge' | 'deep_dive' | 'brainstorm';
+
+export interface IntentBadge {
+  intent: ConversationIntent;
+  confidence: number;
+  label: string;
+  icon: string;
+}
+
+export type BackgroundTaskStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+export interface BackgroundTask {
+  task_id: string;
+  task_type: string;
+  status: BackgroundTaskStatus;
+  message: string;
+}
+
+export interface ConversationRequest {
+  message: string;
+  mode_override?: ConversationIntent;
+}
+
+export interface ConversationResponse {
+  response: string;
+  intent_badge: IntentBadge;
+  background_task: BackgroundTask | null;
+  user_id: string;
+  timestamp: string;
+}
+
 // Recommendations
 export interface RecommendationItem {
   id: string;
