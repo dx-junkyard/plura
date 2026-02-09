@@ -4,13 +4,13 @@ MINDYARD - Empathy Node
 
 共感特化のプロンプトで、聞く姿勢を重視した応答を生成する。
 """
-import logging
 from typing import Any, Dict, Optional
 
 from app.core.llm import llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
+from app.core.logger import get_traced_logger
 
-logger = logging.getLogger(__name__)
+logger = get_traced_logger("EmpathyNode")
 
 _SYSTEM_PROMPT = """
 You are the "Emotional Intelligent Partner" of a Second Brain system.
@@ -51,6 +51,7 @@ async def run_empathy_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         await provider.initialize()
+        logger.info("LLM request", metadata={"prompt_preview": input_text[:100]})
         result = await provider.generate_text(
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
@@ -58,7 +59,8 @@ async def run_empathy_node(state: Dict[str, Any]) -> Dict[str, Any]:
             ],
             temperature=0.5,
         )
+        logger.info("LLM response", metadata={"response_preview": result.content[:100]})
         return {"response": result.content}
     except Exception as e:
-        logger.warning(f"Empathy node LLM call failed: {e}")
+        logger.warning("LLM call failed", metadata={"error": str(e)})
         return {"response": "お気持ち、受け止めました。話してくれてありがとうございます。"}

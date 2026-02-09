@@ -7,13 +7,13 @@ UXポイント:
 - 非同期トリガー: 深い調査が必要な場合、Celeryタスクをキック
 - フックメッセージ: 「詳細な裏付け情報を調査中です...」を添える
 """
-import logging
 from typing import Any, Dict, Optional
 
 from app.core.llm import llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
+from app.core.logger import get_traced_logger
 
-logger = logging.getLogger(__name__)
+logger = get_traced_logger("KnowledgeNode")
 
 _SYSTEM_PROMPT = """あなたはMINDYARDのナレッジアシスタントです。
 ユーザーの知識要求に対して、正確で分かりやすい回答を提供してください。
@@ -61,7 +61,7 @@ async def _check_requires_deep_research(
         )
         return bool(result.get("requires_deep_research", False))
     except Exception as e:
-        logger.warning(f"Deep research check failed: {e}")
+        logger.warning("Deep research check failed", metadata={"error": str(e)})
         return False
 
 
@@ -87,6 +87,7 @@ async def run_knowledge_node(state: Dict[str, Any]) -> Dict[str, Any]:
         await provider.initialize()
 
         # A. 即時回答の生成
+        logger.info("LLM request (quick answer)", metadata={"prompt_preview": input_text[:100]})
         answer_result = await provider.generate_text(
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
@@ -95,9 +96,11 @@ async def run_knowledge_node(state: Dict[str, Any]) -> Dict[str, Any]:
             temperature=0.3,
         )
         quick_answer = answer_result.content
+        logger.info("LLM response (quick answer)", metadata={"response_preview": quick_answer[:100]})
 
         # B. 深掘り調査が必要か判定し、必要ならCeleryに投げる
         needs_research = await _check_requires_deep_research(provider, input_text)
+        logger.info("Deep research check", metadata={"needs_research": needs_research})
 
         background_task_info = None
         if needs_research:
@@ -126,7 +129,7 @@ async def run_knowledge_node(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.warning(f"Knowledge node LLM call failed: {e}")
+        logger.warning("LLM call failed", metadata={"error": str(e)})
         return {
             "response": "お調べします。少々お待ちください。",
             "background_task_info": None,

@@ -10,14 +10,14 @@ MINDYARD - Intent Router (Hypothesis-Driven)
 - brainstorm: 発想・アイデア出し
 - probe: 意図確認（確信度が低い場合の探り）
 """
-import logging
 from typing import Any, Dict, Optional
 
 from app.core.llm import llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
+from app.core.logger import get_traced_logger
 from app.schemas.conversation import ConversationIntent, PreviousEvaluation
 
-logger = logging.getLogger(__name__)
+logger = get_traced_logger("Router")
 
 ROUTER_PROMPT = """
 You are the "Cognitive Navigator" of a Second Brain system.
@@ -142,9 +142,26 @@ class IntentRouter:
                 "reasoning": str,
             }
         """
+        logger.info(
+            "classify started",
+            metadata={
+                "input_preview": input_text[:80],
+                "has_prev_context": prev_context is not None,
+            },
+        )
+
         provider = self._get_provider()
         if not provider:
-            return self._fallback_classify(input_text)
+            result = self._fallback_classify(input_text)
+            logger.info(
+                "classify completed (fallback)",
+                metadata={
+                    "intent": result["intent"].value,
+                    "confidence": result["confidence"],
+                    "method": "keyword_fallback",
+                },
+            )
+            return result
 
         # 文脈情報の構築
         context_str = ""
@@ -168,9 +185,25 @@ class IntentRouter:
                 ],
                 temperature=0.2,
             )
-            return self._parse_hypothesis_result(result)
+            parsed = self._parse_hypothesis_result(result)
+            logger.info(
+                "classify completed",
+                metadata={
+                    "intent": parsed["intent"].value,
+                    "primary_intent": parsed["primary_intent"].value,
+                    "primary_confidence": parsed["primary_confidence"],
+                    "secondary_intent": parsed["secondary_intent"].value,
+                    "secondary_confidence": parsed["secondary_confidence"],
+                    "needs_probing": parsed["needs_probing"],
+                    "method": "llm",
+                },
+            )
+            return parsed
         except Exception as e:
-            logger.warning(f"Intent classification via LLM failed: {e}")
+            logger.warning(
+                "classify failed, using fallback",
+                metadata={"error": str(e)},
+            )
             return self._fallback_classify(input_text)
 
     def _get_system_prompt(self) -> str:

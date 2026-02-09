@@ -9,13 +9,14 @@ Router は仮説駆動型でユーザー入力の意図を分類し、適切なN
 確信度が低い場合はProbeノードで意図を確認する探りレスポンスを生成する。
 mode_override が指定されている場合、Routerの判定を上書きする（Mode Switcher機能）。
 """
-import logging
+import time
 from typing import Any, Dict, List, Optional
 
 from langgraph.graph import StateGraph, END
 
 from app.core.llm import llm_manager
 from app.core.llm_provider import LLMUsageRole
+from app.core.logger import get_traced_logger
 from app.schemas.conversation import (
     ConversationIntent,
     ConversationResponse,
@@ -34,7 +35,7 @@ from app.services.layer1.nodes import (
     run_brainstorm_node,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_traced_logger("Graph")
 
 
 # --- State 定義 ---
@@ -81,6 +82,10 @@ async def router_node(state: AgentState) -> AgentState:
             intent = ConversationIntent(mode_override)
         except ValueError:
             intent = ConversationIntent.CHAT
+        logger.info(
+            "Router: mode_override applied",
+            metadata={"intent": intent.value},
+        )
         return {
             "intent": intent.value,
             "confidence": 1.0,
@@ -111,6 +116,14 @@ async def router_node(state: AgentState) -> AgentState:
 
     # 1. 本当に自信がない場合のみProbe
     if primary_conf < 0.3:
+        logger.info(
+            "Router: low confidence, routing to Probe",
+            metadata={
+                "primary_intent": primary_intent.value,
+                "primary_confidence": primary_conf,
+                "secondary_intent": secondary_intent.value,
+            },
+        )
         return {
             "intent": ConversationIntent.PROBE.value,
             "confidence": primary_conf,
@@ -123,6 +136,15 @@ async def router_node(state: AgentState) -> AgentState:
     alternative_intent = None
     if (primary_conf - secondary_conf) < 0.1 and secondary_conf > 0.1:
         alternative_intent = secondary_intent.value
+
+    logger.info(
+        "Router: intent determined",
+        metadata={
+            "intent": primary_intent.value,
+            "confidence": primary_conf,
+            "alternative_intent": alternative_intent,
+        },
+    )
 
     return {
         "intent": primary_intent.value,
@@ -158,23 +180,49 @@ def _append_fallback_hint(response: str, alternative_intent: Optional[str]) -> s
 
 # --- Node Wrappers ---
 
+_node_logger = get_traced_logger("Node")
+
+
+async def _traced_node_wrapper(
+    node_name: str,
+    node_fn,
+    state: AgentState,
+) -> Dict[str, Any]:
+    """各ノードの実行をトレース付きで行う共通ラッパー"""
+    _node_logger.info(
+        f"{node_name} started",
+        metadata={"input_preview": state.get("input_text", "")[:80]},
+    )
+    start = time.monotonic()
+    result = await node_fn(state)
+    duration_ms = round((time.monotonic() - start) * 1000, 1)
+    _node_logger.info(
+        f"{node_name} completed",
+        metadata={
+            "duration_ms": duration_ms,
+            "response_preview": result.get("response", "")[:100],
+        },
+    )
+    return result
+
+
 async def chat_node(state: AgentState) -> AgentState:
     """Chit-Chat Node ラッパー"""
-    result = await run_chat_node(state)
+    result = await _traced_node_wrapper("ChatNode", run_chat_node, state)
     response = _append_fallback_hint(result["response"], state.get("alternative_intent"))
     return {"response": response}
 
 
 async def empathy_node(state: AgentState) -> AgentState:
     """Empathy Node ラッパー"""
-    result = await run_empathy_node(state)
+    result = await _traced_node_wrapper("EmpathyNode", run_empathy_node, state)
     response = _append_fallback_hint(result["response"], state.get("alternative_intent"))
     return {"response": response}
 
 
 async def knowledge_node(state: AgentState) -> AgentState:
     """Knowledge & Async Trigger Node ラッパー"""
-    result = await run_knowledge_node(state)
+    result = await _traced_node_wrapper("KnowledgeNode", run_knowledge_node, state)
     response = _append_fallback_hint(result["response"], state.get("alternative_intent"))
     update: Dict[str, Any] = {"response": response}
     if result.get("background_task_info"):
@@ -184,14 +232,14 @@ async def knowledge_node(state: AgentState) -> AgentState:
 
 async def deep_dive_node(state: AgentState) -> AgentState:
     """Deep-Dive Node ラッパー"""
-    result = await run_deep_dive_node(state)
+    result = await _traced_node_wrapper("DeepDiveNode", run_deep_dive_node, state)
     response = _append_fallback_hint(result["response"], state.get("alternative_intent"))
     return {"response": response}
 
 
 async def brainstorm_node(state: AgentState) -> AgentState:
     """Brainstorm Node ラッパー"""
-    result = await run_brainstorm_node(state)
+    result = await _traced_node_wrapper("BrainstormNode", run_brainstorm_node, state)
     response = _append_fallback_hint(result["response"], state.get("alternative_intent"))
     return {"response": response}
 
@@ -265,6 +313,16 @@ async def probe_node(state: AgentState) -> AgentState:
     hypothesis_a = hypotheses[0] if len(hypotheses) > 0 else "chat"
     hypothesis_b = hypotheses[1] if len(hypotheses) > 1 else "chat"
 
+    _node_logger.info(
+        "ProbeNode started",
+        metadata={
+            "hypothesis_a": hypothesis_a,
+            "hypothesis_b": hypothesis_b,
+            "input_preview": user_input[:80],
+        },
+    )
+    start = time.monotonic()
+
     # LLMでの動的プローブ生成を試行
     try:
         provider = llm_manager.get_client(LLMUsageRole.FAST)
@@ -282,13 +340,30 @@ async def probe_node(state: AgentState) -> AgentState:
                 ],
                 temperature=0.5,
             )
+            duration_ms = round((time.monotonic() - start) * 1000, 1)
+            _node_logger.info(
+                "ProbeNode completed (LLM)",
+                metadata={
+                    "duration_ms": duration_ms,
+                    "response_preview": result.content[:100],
+                },
+            )
             return {"response": result.content}
     except Exception as e:
-        logger.warning(f"Probe node LLM generation failed: {e}")
+        _node_logger.warning(
+            "ProbeNode LLM failed, using template fallback",
+            metadata={"error": str(e)},
+        )
 
     # フォールバック: テンプレートベースの探りレスポンス
     template_key = (hypothesis_a, hypothesis_b)
     response = _PROBE_TEMPLATES.get(template_key, _DEFAULT_PROBE_TEMPLATE)
+
+    duration_ms = round((time.monotonic() - start) * 1000, 1)
+    _node_logger.info(
+        "ProbeNode completed (template fallback)",
+        metadata={"duration_ms": duration_ms},
+    )
 
     return {"response": response}
 
@@ -300,7 +375,12 @@ def decide_next_node(state: AgentState) -> str:
     intent = state.get("intent", "chat")
     valid_intents = {"chat", "empathy", "knowledge", "deep_dive", "brainstorm", "probe"}
     if intent not in valid_intents:
+        logger.warning(
+            "Transitioning to fallback node",
+            metadata={"invalid_intent": intent, "fallback": "chat"},
+        )
         return "chat"
+    logger.info(f"Transitioning to {intent} node")
     return intent
 
 
@@ -373,6 +453,16 @@ async def run_conversation(
     Returns:
         ConversationResponse（即時回答 + Intent Badge + 非同期タスク情報）
     """
+    logger.info(
+        "run_conversation started",
+        metadata={
+            "input_preview": input_text[:80],
+            "user_id": user_id,
+            "mode_override": mode_override,
+        },
+    )
+    conv_start = time.monotonic()
+
     initial_state: AgentState = {
         "input_text": input_text,
         "user_id": user_id,
@@ -419,9 +509,22 @@ async def run_conversation(
             message=bg_info["message"],
         )
 
-    return ConversationResponse(
+    conv_response = ConversationResponse(
         response=result.get("response", ""),
         intent_badge=intent_badge,
         background_task=background_task,
         user_id=user_id,
     )
+
+    duration_ms = round((time.monotonic() - conv_start) * 1000, 1)
+    logger.info(
+        "run_conversation completed",
+        metadata={
+            "intent": intent_enum.value,
+            "confidence": intent_badge.confidence,
+            "has_background_task": background_task is not None,
+            "duration_ms": duration_ms,
+        },
+    )
+
+    return conv_response
