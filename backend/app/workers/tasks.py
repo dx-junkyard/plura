@@ -129,10 +129,28 @@ def analyze_log_structure(self, log_id: str):
                 logger.info(f"Log already analyzed for structure: {log_id}")
                 return {"status": "skipped", "message": "Already analyzed for structure"}
 
-            # 状態ログは構造化分析の対象外
+            # 状態ログは構造分析をスキップし、マイクロフィードバックを返す
             if log.intent == LogIntent.STATE or log.intent == "state":
-                logger.info(f"Skipping structural analysis for state log: {log_id}")
-                return {"status": "skipped", "reason": "state_log"}
+                logger.info(f"Generating micro-feedback for state log: {log_id}")
+                try:
+                    analysis = await structural_analyzer.generate_state_feedback(
+                        content=log.content,
+                        emotions=log.emotions,
+                    )
+                    log.structural_analysis = analysis
+                    log.is_structure_analyzed = True
+                    flag_modified(log, "structural_analysis")
+                    await session.commit()
+                    logger.info(f"State micro-feedback saved for log_id: {log_id}")
+                    return {
+                        "status": "success",
+                        "log_id": log_id,
+                        "relationship_type": analysis.get("relationship_type"),
+                        "probing_question": analysis.get("probing_question"),
+                    }
+                except Exception as e:
+                    logger.error(f"Error generating state feedback for {log_id}: {str(e)}", exc_info=True)
+                    return {"status": "error", "message": str(e)}
 
             try:
                 logger.info(f"Starting structural analysis for log_id: {log_id}")

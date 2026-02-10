@@ -122,6 +122,91 @@ class StructuralAnalyzer:
         except Exception as e:
             return self._fallback_analyze(current_log, previous_hypothesis)
 
+    # --- 状態ログ用マイクロフィードバック ---
+
+    _STATE_FEEDBACK_PROMPT = """あなたはMINDYARDの記録パートナーです。
+ユーザーが「眠い」「疲れた」「今日は良い天気」のような短い状態・コンディションを記録しました。
+分析や質問は不要です。「受け取ったこと」と「軽い共感」を1〜2文で伝えてください。
+
+ルール:
+- 40文字以内で簡潔に
+- 質問しない
+- アドバイスしない
+- ポジティブなら一緒に喜ぶ、ネガティブなら労う
+- 日本語で応答する
+"""
+
+    # 感情タグ → フォールバックメッセージのマッピング
+    _STATE_FALLBACK_MAP = {
+        "frustrated": "お疲れさまです。無理せず、ご自身のペースで。",
+        "angry": "記録しました。少し気持ちを落ち着ける時間が取れるといいですね。",
+        "achieved": "記録しました。いい調子ですね！",
+        "anxious": "記録しました。少しでも気持ちが軽くなりますように。",
+        "confused": "記録しました。整理したくなったら声をかけてくださいね。",
+        "relieved": "記録しました。ほっとしますね。",
+        "excited": "記録しました。いいエネルギーですね！",
+        "neutral": "記録しました。",
+    }
+
+    _STATE_FALLBACK_DEFAULT = "記録しました。お疲れさまです。"
+
+    async def generate_state_feedback(
+        self,
+        content: str,
+        emotions: Optional[list] = None,
+    ) -> Dict:
+        """
+        STATE ログ用のマイクロフィードバックを生成
+
+        構造分析は行わず、ログ内容と感情に基づいた
+        短い共感メッセージを probing_question に格納して返す。
+
+        Args:
+            content: ユーザーの入力内容
+            emotions: Context Analyzer が検出した感情タグのリスト
+
+        Returns:
+            structural_analysis 互換の dict
+        """
+        feedback = None
+
+        # LLMで自然なフィードバックを生成
+        provider = self._get_provider()
+        if provider:
+            try:
+                await provider.initialize()
+                result = await provider.generate_text(
+                    messages=[
+                        {"role": "system", "content": self._STATE_FEEDBACK_PROMPT},
+                        {"role": "user", "content": content},
+                    ],
+                    temperature=0.5,
+                )
+                feedback = result.content
+                logger.info(
+                    "State feedback generated via LLM",
+                    metadata={"response_preview": feedback[:100]},
+                )
+            except Exception as e:
+                logger.warning(
+                    "State feedback LLM generation failed, using fallback",
+                    metadata={"error": str(e)},
+                )
+
+        # フォールバック: 感情タグに基づくテンプレート
+        if not feedback:
+            primary_emotion = emotions[0] if emotions else None
+            feedback = self._STATE_FALLBACK_MAP.get(
+                primary_emotion, self._STATE_FALLBACK_DEFAULT
+            )
+
+        return {
+            "relationship_type": RelationshipType.NEW.value,
+            "relationship_reason": "状態記録（STATE）のためマイクロフィードバックを返却",
+            "updated_structural_issue": "",
+            "probing_question": feedback,
+        }
+
     # --- 共感モード ---
 
     _EMPATHY_SYSTEM_PROMPT = """あなたはMINDYARDの共感パートナーです。
