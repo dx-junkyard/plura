@@ -80,7 +80,7 @@ class ContextAnalyzer:
 
 必ず以下のJSON形式で応答してください:
 {
-    "intent": "log" | "vent" | "structure",
+    "intent": "log" | "vent" | "structure" | "state",
     "emotions": ["emotion1", "emotion2"],
     "emotion_scores": {"emotion1": 0.8, "emotion2": 0.5},
     "topics": ["topic1", "topic2"],
@@ -91,8 +91,12 @@ class ContextAnalyzer:
 
 intent の判定基準:
 - "log": 単に記録・メモしたい（事実の記述、淡々とした報告）
-- "vent": 愚痴・不満を吐き出したい（感情的な表現、不満、フラストレーション）
+- "vent": **ネガティブな感情**を吐き出したい（怒り、不満、フラストレーション、悲しみ、不安）
+  ※ポジティブな感情（嬉しい、楽しい、気分が良い）は vent ではない。
 - "structure": 整理・分析したい（「どうすれば」「なぜ」などの思考整理）
+- "state": 現在の状態・コンディションの報告（体調、気分、天気、短い感想など）。
+  ポジティブ（「いい天気だ」「気分が良い」）でもネガティブ（「眠い」「疲れた」）でも、
+  分析や助けを求めていない短い状態共有はすべて state に分類する。
 
 emotions の選択肢:
 - frustrated (焦り)
@@ -127,6 +131,7 @@ JSON形式で解析結果を返してください。"""
             "log": LogIntent.LOG,
             "vent": LogIntent.VENT,
             "structure": LogIntent.STRUCTURE,
+            "state": LogIntent.STATE,
         }
         intent = intent_map.get(intent_str, LogIntent.LOG)
 
@@ -160,39 +165,58 @@ JSON形式で解析結果を返してください。"""
         emotions = []
         emotion_scores = {}
 
-        negative_keywords = ["困った", "大変", "疲れた", "うまくいかない", "最悪", "つらい"]
-        positive_keywords = ["できた", "成功", "うまくいった", "嬉しい", "良かった"]
+        negative_keywords = ["困った", "大変", "うまくいかない", "最悪", "つらい", "ひどい", "嫌だ"]
+        positive_keywords = ["できた", "成功", "うまくいった", "嬉しい", "良かった", "いい天気", "気分が良い", "気分よく", "楽しい", "最高"]
         anxiety_keywords = ["不安", "心配", "どうしよう", "間に合う"]
+        state_keywords = [
+            "眠い", "眠たい", "だるい", "疲れた", "お腹すいた", "腹減った",
+            "暑い", "寒い", "頭痛い", "天気", "気分", "体調",
+            "終わったー", "帰りたい", "目覚めた",
+        ]
 
-        content_lower = content.lower()
+        has_negative = False
+        has_positive = False
 
         for kw in negative_keywords:
             if kw in content:
                 if "frustrated" not in emotions:
                     emotions.append("frustrated")
                     emotion_scores["frustrated"] = 0.7
+                has_negative = True
 
         for kw in positive_keywords:
             if kw in content:
                 if "achieved" not in emotions:
                     emotions.append("achieved")
                     emotion_scores["achieved"] = 0.7
+                has_positive = True
 
         for kw in anxiety_keywords:
             if kw in content:
                 if "anxious" not in emotions:
                     emotions.append("anxious")
                     emotion_scores["anxious"] = 0.7
+                has_negative = True
 
         if not emotions:
             emotions = ["neutral"]
             emotion_scores["neutral"] = 0.5
 
         # インテント判定
-        if any(kw in content for kw in ["！", "...", "なんで", "ひどい"]):
+        # 状態共有キーワードの検出
+        has_state = any(kw in content for kw in state_keywords)
+
+        if has_state or (has_positive and not has_negative and len(content) < 30):
+            # 状態報告（ポジティブ・ネガティブ問わず短い状態共有）
+            intent = LogIntent.STATE
+        elif has_negative and any(kw in content for kw in ["なんで", "ひどい", "...", "愚痴", "聞いて"]):
+            # ネガティブ感情 + 吐き出しシグナル → VENT
             intent = LogIntent.VENT
         elif any(kw in content for kw in ["どうすれば", "整理", "まとめ", "なぜ"]):
             intent = LogIntent.STRUCTURE
+        elif has_negative:
+            # ネガティブだが吐き出しシグナルなし → LOG
+            intent = LogIntent.LOG
         else:
             intent = LogIntent.LOG
 
@@ -234,23 +258,33 @@ JSON形式で解析結果を返してください。"""
         normalized = [emotion for emotion in emotions if emotion in allowed]
         return normalized or ["neutral"]
 
-    def _normalize_tags(self, values: object, topics: Optional[List[str]] = None) -> List[str]:
-        tags = self._normalize_string_list(values, max_items=8)
-        if topics:
-            for topic in topics:
-                if topic not in tags and len(tags) < 8:
-                    tags.append(topic)
-        if not tags:
-            tags = ["Uncategorized"]
-        return tags
+    def _normalize_tags(self, values: object, topics: List[str]) -> List[str]:
+        # トピックをタグの候補に含める
+        candidates = list(values) if isinstance(values, list) else []
+
+        # トピックもタグとして使える場合は追加（重複排除）
+        for topic in topics:
+            if topic not in candidates:
+                candidates.append(topic)
+
+        # ルールベースのタグ付け
+        fixed_tags = ["Private"]  # デフォルトタグ
+
+        for tag in candidates:
+            if not isinstance(tag, str):
+                continue
+            t = tag.strip()
+            if t and t not in fixed_tags:
+                fixed_tags.append(t)
+
+        return fixed_tags[:5]
 
     def _fallback_tags(self, content: str) -> List[str]:
-        work_keywords = ["案件", "プロジェクト", "会議", "顧客", "開発", "仕様", "タスク", "仕事"]
-        idea_keywords = ["アイデア", "仮説", "案", "改善", "試したい"]
-
-        tags = ["Work" if any(kw in content for kw in work_keywords) else "Private"]
-        if any(kw in content for kw in idea_keywords):
-            tags.append("Idea")
+        tags = ["Private"]
+        if "仕事" in content or "業務" in content:
+            tags.append("Work")
+        if "プロジェクト" in content:
+            tags.append("Project")
         return tags
 
 

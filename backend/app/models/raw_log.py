@@ -38,6 +38,7 @@ class LogIntent(str, Enum):
     LOG = "log"
     VENT = "vent"
     STRUCTURE = "structure"
+    STATE = "state"  # コンディション・状態記録
 
 
 class EmotionTag(str, Enum):

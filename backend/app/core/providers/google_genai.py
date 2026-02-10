@@ -1,8 +1,9 @@
 """
-MINDYARD - Vertex AI Provider
-Google Cloud Vertex AI (Gemini) を使用するLLMプロバイダー実装
+MINDYARD - Google Gen AI Provider
+Google Gen AI SDK (google-genai) を使用するLLMプロバイダー実装
 """
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
@@ -17,6 +18,8 @@ from app.core.llm_provider import (
     ProviderType,
 )
 
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -47,13 +50,14 @@ def extract_json_from_text(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-class VertexAIProvider(LLMProvider):
+class GoogleGenAIClient(LLMProvider):
     """
-    Google Cloud Vertex AI (Gemini) を使用するLLMプロバイダー
+    Google Gen AI SDK を使用するLLMプロバイダー
 
     特徴:
-    - Google Cloud認証（サービスアカウントまたはADC）
-    - Geminiモデルシリーズのサポート
+    - google-genai SDK によるVertex AI経由のGeminiモデルアクセス
+    - GOOGLE_CLOUD_PROJECT 環境変数によるプロジェクト指定
+    - Fail Fast: 必要な環境変数が不足している場合は起動時にエラー
     - 構造化出力のネイティブサポート
     """
 
@@ -73,21 +77,32 @@ class VertexAIProvider(LLMProvider):
         return ProviderType.VERTEX
 
     async def initialize(self) -> None:
-        """Vertex AIクライアントを初期化"""
+        """Google Gen AI クライアントを初期化（Fail Fast）"""
         if self._initialized:
             return
 
+        if not self._project_id:
+            logger.critical(
+                "GOOGLE_CLOUD_PROJECT is not set. "
+                "Google Gen AI provider requires a GCP project ID. "
+                "Set the GOOGLE_CLOUD_PROJECT environment variable."
+            )
+            raise ValueError(
+                "GOOGLE_CLOUD_PROJECT is not set. "
+                "Cannot initialize Google Gen AI provider without a GCP project ID."
+            )
+
         try:
-            # Vertex AIの初期化
             self._client = genai.Client(
                 vertexai=True,
                 project=self._project_id,
-                location=self._location
+                location=self._location,
             )
             self._initialized = True
 
         except Exception as e:
-            raise RuntimeError(f"Failed to initialize Vertex AI: {e}")
+            logger.critical(f"Failed to initialize Google Gen AI client: {e}")
+            raise RuntimeError(f"Failed to initialize Google Gen AI: {e}")
 
     @property
     def client(self) -> genai.Client:
@@ -113,7 +128,6 @@ class VertexAIProvider(LLMProvider):
             content = msg.get("content", "")
 
             if role == "system":
-                # システムメッセージはsystem_instructionとして扱う
                 system_instruction = content
             elif role == "assistant":
                 contents.append(types.Content(
@@ -145,7 +159,7 @@ class VertexAIProvider(LLMProvider):
             system_instruction=system_instruction,
         )
 
-        response = await self.client.models.generate_content_async(
+        response = await self.client.aio.models.generate_content(
             model=self.config.model,
             contents=contents,
             config=config,
@@ -186,7 +200,7 @@ class VertexAIProvider(LLMProvider):
 
         config = types.GenerateContentConfig(
             temperature=temperature or self.config.temperature,
-            response_mime_type="application/json",  # Gemini のJSON mode
+            response_mime_type="application/json",
             system_instruction=system_instruction,
         )
 
@@ -231,7 +245,6 @@ class VertexAIProvider(LLMProvider):
 
         system_instruction, contents = self._convert_messages_to_gemini_format(messages)
 
-        # google-genaiのresponse_schemaはPydanticモデルクラスを受け取れる
         config = types.GenerateContentConfig(
             temperature=temperature or self.config.temperature,
             response_mime_type="application/json",
@@ -245,8 +258,6 @@ class VertexAIProvider(LLMProvider):
                 contents=contents,
                 config=config,
             )
-            # レスポンスはテキストとして返ってくるが、SDKのバージョンによってはparsedも返る可能性がある。
-            # 一旦textからJSONロードし、validateする
             content = response.text if response.text else "{}"
             data = json.loads(content)
             return response_model.model_validate(data)
@@ -261,9 +272,8 @@ class VertexAIProvider(LLMProvider):
         Geminiモデルがreasoningモデルかどうかを判定
 
         現時点ではGeminiはreasoningモデルとして扱わない。
-        将来的にGemini Pro系がreasoningをサポートする場合は更新。
+        将来的にGemini系がreasoningをサポートする場合は更新。
         """
-        # Gemini 2.0系のThinkingモードなどが将来追加される可能性
         reasoning_patterns = [
             r"gemini.*thinking",
             r"gemini.*reasoning",

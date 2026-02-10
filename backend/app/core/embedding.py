@@ -51,8 +51,8 @@ class EmbeddingManager:
             from app.core.providers.vertex_embedding import VertexAIEmbeddingProvider
             return VertexAIEmbeddingProvider(
                 config=provider_config,
-                project_id=settings.get_vertex_project_id(),
-                location=settings.vertex_location,
+                project_id=settings.google_cloud_project,
+                location="us-central1",
             )
         else:
             raise ValueError(f"Unknown embedding provider type: {provider_type}")

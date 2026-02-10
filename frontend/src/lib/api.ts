@@ -12,6 +12,8 @@ import type {
   InsightCardListResponse,
   SharingProposal,
   RecommendationResponse,
+  ConversationIntent,
+  ConversationResponse,
 } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
@@ -173,6 +175,18 @@ class ApiClient {
 
   async sendThanks(insightId: string): Promise<{ message: string; thanks_count: number }> {
     const { data } = await this.client.post(`/insights/${insightId}/thanks`);
+    return data;
+  }
+
+  // Conversation (LangGraph Dynamic Routing)
+  async converse(
+    inputText: string,
+    modeOverride?: ConversationIntent
+  ): Promise<ConversationResponse> {
+    const { data } = await this.client.post<ConversationResponse>('/conversation/', {
+      message: inputText,
+      mode_override: modeOverride,
+    });
     return data;
   }
 

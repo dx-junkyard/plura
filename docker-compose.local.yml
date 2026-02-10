@@ -1,25 +1,6 @@
 version: "3.8"
 
 services:
-  nginx:
-    image: nginx:latest
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - frontend
-      - backend
-
-  ngrok:
-    image: ngrok/ngrok:latest
-    command:
-      - "http"
-      - "--url=${NGHOST}"
-      - "nginx:80" # ngrokはNginxだけを見れば良くなる
-    environment:
-      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
-    depends_on:
-      - nginx
-
   # PostgreSQL Database
   postgres:
     image: postgres:16-alpine
@@ -102,7 +83,7 @@ services:
         condition: service_started
     volumes:
       - ./backend:/app
-      - ./.gcp:/root/.config/gcloud
+      - ./.gcp:/app/.config/gcloud
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   # Celery Worker
@@ -134,7 +115,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-      - ./.gcp:/root/.config/gcloud
+      - ./.gcp:/app/.config/gcloud
     command: celery -A app.workers.celery_app worker --loglevel=info -Q layer1,layer2,celery
 
   # Frontend (Next.js)

@@ -14,7 +14,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.workers.celery_app import celery_app
 from app.db.base import async_session_maker, engine
-from app.models.raw_log import RawLog
+from app.models.raw_log import RawLog, LogIntent
 from app.models.insight import InsightCard, InsightStatus
 from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer2.privacy_sanitizer import privacy_sanitizer
@@ -129,6 +129,29 @@ def analyze_log_structure(self, log_id: str):
                 logger.info(f"Log already analyzed for structure: {log_id}")
                 return {"status": "skipped", "message": "Already analyzed for structure"}
 
+            # 状態ログは構造分析をスキップし、マイクロフィードバックを返す
+            if log.intent == LogIntent.STATE or log.intent == "state":
+                logger.info(f"Generating micro-feedback for state log: {log_id}")
+                try:
+                    analysis = await structural_analyzer.generate_state_feedback(
+                        content=log.content,
+                        emotions=log.emotions,
+                    )
+                    log.structural_analysis = analysis
+                    log.is_structure_analyzed = True
+                    flag_modified(log, "structural_analysis")
+                    await session.commit()
+                    logger.info(f"State micro-feedback saved for log_id: {log_id}")
+                    return {
+                        "status": "success",
+                        "log_id": log_id,
+                        "relationship_type": analysis.get("relationship_type"),
+                        "probing_question": analysis.get("probing_question"),
+                    }
+                except Exception as e:
+                    logger.error(f"Error generating state feedback for {log_id}: {str(e)}", exc_info=True)
+                    return {"status": "error", "message": str(e)}
+
             try:
                 logger.info(f"Starting structural analysis for log_id: {log_id}")
                 # --- Topic overlap filter to avoid irrelevant history ---
@@ -179,11 +202,18 @@ def analyze_log_structure(self, log_id: str):
                         summary += "..."
                     recent_history.append(summary)
 
-                # Step 4: StructuralAnalyzer 実行
+                # Step 4: 感情スコアの最大値を取得
+                max_emotion_score = 0.0
+                if log.emotion_scores and isinstance(log.emotion_scores, dict):
+                    scores = log.emotion_scores.values()
+                    max_emotion_score = max(scores) if scores else 0.0
+
+                # Step 5: StructuralAnalyzer 実行
                 analysis = await structural_analyzer.analyze(
                     current_log=log.content,
                     recent_history=recent_history if recent_history else None,
                     previous_hypothesis=previous_hypothesis,
+                    max_emotion_score=max_emotion_score,
                 )
 
                 # 結果を保存
@@ -302,6 +332,67 @@ def process_log_for_insight(self, log_id: str):
                 return {"status": "error", "message": str(e)}
 
     return run_async(_process())
+
+
+@celery_app.task(bind=True, max_retries=3)
+def deep_research_task(self, query: str, user_id: str):
+    """
+    Knowledge Node からキックされる非同期調査タスク
+
+    ユーザーの質問に対してDEEPモデルで詳細な調査を行い、
+    結果をCeleryバックエンド経由で返す。
+    将来的にWebSocket通知やDB保存にも対応可能。
+    """
+    async def _research():
+        await engine.dispose()
+
+        try:
+            logger.info(
+                f"Starting deep research for user_id: {user_id}, query: {query[:100]}"
+            )
+
+            from app.core.llm import llm_manager
+            from app.core.llm_provider import LLMUsageRole
+
+            provider = llm_manager.get_client(LLMUsageRole.DEEP)
+            await provider.initialize()
+
+            system_prompt = """あなたは詳細な調査・リサーチを行うアシスタントです。
+以下の質問について、深く掘り下げた包括的な調査レポートを作成してください。
+
+レポートのフォーマット:
+1. 概要: 質問への総合的な回答
+2. 詳細分析: 各論点の掘り下げ
+3. エビデンス: 根拠となる情報・データ
+4. 結論と推奨: まとめと次のアクション
+
+日本語で応答してください。"""
+
+            result = await provider.generate_text(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": query},
+                ],
+                temperature=0.3,
+            )
+
+            logger.info(f"Deep research completed for user_id: {user_id}")
+
+            return {
+                "status": "success",
+                "user_id": user_id,
+                "query": query,
+                "report": result.content,
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error in deep_research_task for user_id {user_id}: {str(e)}",
+                exc_info=True,
+            )
+            return {"status": "error", "message": str(e)}
+
+    return run_async(_research())
 
 
 @celery_app.task

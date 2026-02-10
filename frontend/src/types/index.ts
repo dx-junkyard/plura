@@ -21,7 +21,7 @@ export interface Token {
 }
 
 // Log Intent
-export type LogIntent = 'log' | 'vent' | 'structure';
+export type LogIntent = 'log' | 'vent' | 'structure' | 'state';
 
 // Model Info
 export interface ModelInfo {
@@ -69,6 +69,7 @@ export interface AckResponse {
   log_id: string;
   timestamp: string;
   transcribed_text?: string;  // 音声入力時の文字起こしテキスト
+  skip_structural_analysis?: boolean;
 }
 
 // Insight Card (Layer 3)
@@ -104,6 +105,50 @@ export interface SharingProposal {
   insight: InsightCard;
   message: string;
   original_content_preview: string | null;
+}
+
+// Conversation (LangGraph Hypothesis-Driven Routing)
+export type ConversationIntent = 'chat' | 'empathy' | 'knowledge' | 'deep_dive' | 'brainstorm' | 'probe';
+
+export type PreviousEvaluation = 'positive' | 'negative' | 'pivot' | 'none';
+
+export interface IntentHypothesis {
+  previous_evaluation: PreviousEvaluation;
+  primary_intent: ConversationIntent;
+  primary_confidence: number;
+  secondary_intent: ConversationIntent;
+  secondary_confidence: number;
+  needs_probing: boolean;
+  reasoning: string;
+}
+
+export interface IntentBadge {
+  intent: ConversationIntent;
+  confidence: number;
+  label: string;
+  icon: string;
+}
+
+export type BackgroundTaskStatus = 'queued' | 'running' | 'completed' | 'failed';
+
+export interface BackgroundTask {
+  task_id: string;
+  task_type: string;
+  status: BackgroundTaskStatus;
+  message: string;
+}
+
+export interface ConversationRequest {
+  message: string;
+  mode_override?: ConversationIntent;
+}
+
+export interface ConversationResponse {
+  response: string;
+  intent_badge: IntentBadge;
+  background_task: BackgroundTask | null;
+  user_id: string;
+  timestamp: string;
 }
 
 // Recommendations

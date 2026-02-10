@@ -6,6 +6,8 @@ Layer 2: 文脈依存型・構造的理解アップデート機能
 新しいログが「追加情報」「並列（亜種）」「訂正」「新規」のいずれかを判定し、
 構造的理解を動的に更新する。
 
+高感情スコア時は構造分析をスキップし共感メッセージを返す。
+
 深い思考が必要なため、DEEPモデル（reasoning model）を使用。
 """
 from typing import Dict, List, Optional
@@ -14,6 +16,12 @@ import re
 
 from app.core.llm import llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
+from app.core.logger import get_traced_logger
+
+logger = get_traced_logger("StructuralAnalyzer")
+
+# 感情スコアがこの閾値以上の場合、構造分析をスキップして共感モードに入る
+_EMPATHY_THRESHOLD = 0.6
 
 
 class RelationshipType(str, Enum):
@@ -55,14 +63,19 @@ class StructuralAnalyzer:
         current_log: str,
         recent_history: Optional[List[str]] = None,
         previous_hypothesis: Optional[str] = None,
+        max_emotion_score: float = 0.0,
     ) -> Dict:
         """
         コンテキストを踏まえた構造的分析を実行
+
+        感情スコアが高い場合（>= _EMPATHY_THRESHOLD）は構造分析をスキップし、
+        共感メッセージを返す。
 
         Args:
             current_log: 今回の入力内容
             recent_history: 直近（過去3〜5件分）のログの要約リスト
             previous_hypothesis: 直前のログで導き出された「構造的課題の仮説」
+            max_emotion_score: emotion_scoresの最大値（0.0〜1.0）
 
         Returns:
             {
@@ -73,6 +86,16 @@ class StructuralAnalyzer:
                 "model_info": dict  # 使用したモデル情報
             }
         """
+        # 高感情スコア時は共感モード: 構造分析をスキップ
+        if max_emotion_score >= _EMPATHY_THRESHOLD:
+            logger.info(
+                "Empathy mode activated, skipping structural analysis",
+                metadata={"max_emotion_score": max_emotion_score},
+            )
+            return await self._generate_empathy_response(
+                current_log, previous_hypothesis, max_emotion_score
+            )
+
         provider = self._get_provider()
         if not provider:
             return self._fallback_analyze(current_log, previous_hypothesis)
@@ -98,6 +121,183 @@ class StructuralAnalyzer:
 
         except Exception as e:
             return self._fallback_analyze(current_log, previous_hypothesis)
+
+    # --- 状態ログ用マイクロフィードバック ---
+
+    _STATE_FEEDBACK_PROMPT = """あなたはMINDYARDの記録パートナーです。
+ユーザーが「眠い」「疲れた」「今日は良い天気」のような短い状態・コンディションを記録しました。
+分析や質問は不要です。「受け取ったこと」と「軽い共感」を1〜2文で伝えてください。
+
+ルール:
+- 40文字以内で簡潔に
+- 質問しない
+- アドバイスしない
+- ポジティブなら一緒に喜ぶ、ネガティブなら労う
+- 日本語で応答する
+"""
+
+    # 感情タグ → フォールバックメッセージのマッピング
+    _STATE_FALLBACK_MAP = {
+        "frustrated": "お疲れさまです。無理せず、ご自身のペースで。",
+        "angry": "記録しました。少し気持ちを落ち着ける時間が取れるといいですね。",
+        "achieved": "記録しました。いい調子ですね！",
+        "anxious": "記録しました。少しでも気持ちが軽くなりますように。",
+        "confused": "記録しました。整理したくなったら声をかけてくださいね。",
+        "relieved": "記録しました。ほっとしますね。",
+        "excited": "記録しました。いいエネルギーですね！",
+        "neutral": "記録しました。",
+    }
+
+    _STATE_FALLBACK_DEFAULT = "記録しました。お疲れさまです。"
+
+    async def generate_state_feedback(
+        self,
+        content: str,
+        emotions: Optional[list] = None,
+    ) -> Dict:
+        """
+        STATE ログ用のマイクロフィードバックを生成
+
+        構造分析は行わず、ログ内容と感情に基づいた
+        短い共感メッセージを probing_question に格納して返す。
+
+        Args:
+            content: ユーザーの入力内容
+            emotions: Context Analyzer が検出した感情タグのリスト
+
+        Returns:
+            structural_analysis 互換の dict
+        """
+        feedback = None
+
+        # LLMで自然なフィードバックを生成
+        provider = self._get_provider()
+        if provider:
+            try:
+                await provider.initialize()
+                result = await provider.generate_text(
+                    messages=[
+                        {"role": "system", "content": self._STATE_FEEDBACK_PROMPT},
+                        {"role": "user", "content": content},
+                    ],
+                    temperature=0.5,
+                )
+                feedback = result.content
+                logger.info(
+                    "State feedback generated via LLM",
+                    metadata={"response_preview": feedback[:100]},
+                )
+            except Exception as e:
+                logger.warning(
+                    "State feedback LLM generation failed, using fallback",
+                    metadata={"error": str(e)},
+                )
+
+        # フォールバック: 感情タグに基づくテンプレート
+        if not feedback:
+            primary_emotion = emotions[0] if emotions else None
+            feedback = self._STATE_FALLBACK_MAP.get(
+                primary_emotion, self._STATE_FALLBACK_DEFAULT
+            )
+
+        return {
+            "relationship_type": RelationshipType.NEW.value,
+            "relationship_reason": "状態記録（STATE）のためマイクロフィードバックを返却",
+            "updated_structural_issue": "",
+            "probing_question": feedback,
+        }
+
+    # --- 共感モード ---
+
+    _EMPATHY_SYSTEM_PROMPT = """あなたはMINDYARDの共感パートナーです。
+ユーザーは感情的な状態にあります。分析や質問ではなく、共感メッセージを返してください。
+
+ルール:
+- まずユーザーの気持ちを受け止める（「〜ですよね」「大変でしたね」等）
+- アドバイスや分析はしない
+- 「無理しなくていい」「話してくれてありがとう」のような安心感を与える
+- 2〜3文で簡潔に
+- 日本語で応答する
+"""
+
+    async def _generate_empathy_response(
+        self,
+        current_log: str,
+        previous_hypothesis: Optional[str],
+        max_emotion_score: float,
+    ) -> Dict:
+        """
+        高感情スコア時の共感レスポンス生成
+
+        LLMが利用可能ならLLMで自然な共感メッセージを生成し、
+        利用不可の場合はテンプレートフォールバック。
+        """
+        # LLMで共感メッセージを生成
+        provider = self._get_provider()
+        empathy_message = None
+
+        if provider:
+            try:
+                await provider.initialize()
+                result = await provider.generate_text(
+                    messages=[
+                        {"role": "system", "content": self._EMPATHY_SYSTEM_PROMPT},
+                        {"role": "user", "content": current_log},
+                    ],
+                    temperature=0.5,
+                )
+                empathy_message = result.content
+                logger.info(
+                    "Empathy message generated via LLM",
+                    metadata={"response_preview": empathy_message[:100]},
+                )
+            except Exception as e:
+                logger.warning(
+                    "Empathy LLM generation failed, using template",
+                    metadata={"error": str(e)},
+                )
+
+        # テンプレートフォールバック
+        if not empathy_message:
+            empathy_message = self._empathy_fallback_message(current_log)
+
+        # 構造的課題は前回の仮説をそのまま維持（感情時に書き換えない）
+        structural_issue = previous_hypothesis or self._extract_simple_issue(current_log)
+
+        return {
+            "relationship_type": RelationshipType.ADDITIVE.value,
+            "relationship_reason": f"高感情スコア（{max_emotion_score:.2f}）のため共感モードで応答",
+            "updated_structural_issue": structural_issue,
+            "probing_question": empathy_message,
+        }
+
+    def _empathy_fallback_message(self, current_log: str) -> str:
+        """テンプレートベースの共感メッセージ"""
+        preview = current_log[:30].replace("\n", " ").strip()
+        if len(current_log) > 30:
+            preview += "..."
+
+        # ネガティブ感情キーワードの検出
+        high_stress_keywords = ["疲れ", "辛", "つら", "しんど", "無理", "限界", "もうダメ", "嫌"]
+        is_high_stress = any(kw in current_log for kw in high_stress_keywords)
+
+        if is_high_stress:
+            return (
+                f"「{preview}」…大変な状況の中、話してくれてありがとうございます。"
+                "無理に整理しなくても大丈夫です。まずはお気持ちをそのまま吐き出してくださいね。"
+            )
+
+        # ポジティブ感情の検出
+        if self._is_positive_sentiment(current_log):
+            return (
+                f"「{preview}」…いい感じですね！"
+                "その気持ち、大切にしてくださいね。"
+            )
+
+        return (
+            f"「{preview}」…お気持ち、受け止めました。"
+            "落ち着いたら、一緒に整理していきましょう。"
+        )
 
     def _get_system_prompt(self) -> str:
         return """あなたはMINDYARDの構造的分析エンジンです。
@@ -131,22 +331,38 @@ class StructuralAnalyzer:
 - CORRECTIONの場合: 新しい情報に基づいて課題を再定義
 - NEWの場合: 新しい構造的課題を定義
 
-## Step 3: 問いの生成
-更新された理解に基づき、さらに深掘りするための質問を1つ作成してください。
-質問は、ユーザーの思考を促し、構造的な問題をより明確にするものにしてください。
+## Step 3: 問いの生成（Sentiment-Aware）
+更新された理解に基づき、問いかけを1つ作成してください。
+**ユーザーの感情の方向性（ポジティブ/ネガティブ/中立）を必ず考慮すること。**
+
+### 感情方向性別のルール:
+
+1. **ポジティブ（喜び、達成、好調、楽しさ）の場合**:
+   - その良い状態を活かす方向で問いかける（次に何をしたいか、成功要因は何か等）。
+   - **禁止**: 「困っていること」「課題」「悩み」「問題点」について聞かないこと。
+   - 例: 「素晴らしいですね！その勢いで次に取り組みたいことはありますか？」
+
+2. **ネガティブ（不満、不安、課題、疲労）の場合**:
+   - その背景にある原因や、解決の糸口を探る問いかけをする。
+   - 例: 「具体的にどの部分が気になっていますか？」
+
+3. **中立・事実のみの場合**:
+   - その事実から展開される文脈や、関連する情報について問いかける。
+   - 例: 「それに関連して、今気になっていることはありますか？」
 
 必ず以下のJSON形式で応答してください:
 {
     "relationship_type": "ADDITIVE" | "PARALLEL" | "CORRECTION" | "NEW",
     "relationship_reason": "判定理由の説明",
     "updated_structural_issue": "更新された構造的課題の定義",
-    "probing_question": "QUESTIONの場合はできる限り具体的な回答、もしくは3つ以内の調査手順。その他の場合は深掘りのための問い。"
+    "probing_question": "QUESTIONの場合はできる限り具体的な回答、もしくは3つ以内の調査手順。その他の場合は感情方向性に適した問い。"
 }
 
 重要: 「問い」を作る際は次を守ってください。
 - 決まり文句を避け、ユーザーの言葉や話題を1つ以上含める。
 - 指示語だけにせず、何についての問い/回答かを明示する。
 - 共感的で圧迫感のないトーンにする。
+- ユーザーがポジティブなのに問題を探さない。ネガティブなのに無理に明るくしない。
 - QUESTIONの場合: まず簡潔に答えられる範囲で答える。確信が持てないときは「今すぐできる調べ方」を2〜3個、具体的キーワード付きで提案する。
 - BRAINSTORM/REFLECTIONの場合: 新しい洞察が出るように理由・背景・具体的状況を尋ねる。
 """
@@ -212,23 +428,38 @@ class StructuralAnalyzer:
         has_word = any(w in text for w in question_words)
         return question_mark or has_word
 
+    # ポジティブ感情キーワード（フォールバック分析用）
+    _POSITIVE_KEYWORDS = [
+        "嬉しい", "楽しい", "良い", "いい", "最高", "素晴らしい",
+        "できた", "成功", "達成", "うまくいった", "良かった",
+        "気持ちいい", "スッキリ", "いい感じ", "頑張った", "天気",
+    ]
+
+    def _is_positive_sentiment(self, text: str) -> bool:
+        """ポジティブな感情かどうかを簡易判定"""
+        negative_keywords = ["困", "大変", "うまくいかない", "最悪", "つらい", "ひどい", "嫌", "不安", "疲れ"]
+        has_negative = any(kw in text for kw in negative_keywords)
+        has_positive = any(kw in text for kw in self._POSITIVE_KEYWORDS)
+        return has_positive and not has_negative
+
     def _fallback_analyze(
         self,
         current_log: str,
         previous_hypothesis: Optional[str],
     ) -> Dict:
         """LLMが利用できない場合のフォールバック"""
-        # シンプルなルールベース分析＋質問時のガイド
         is_q = self._is_question(current_log)
+        is_positive = self._is_positive_sentiment(current_log)
 
         if not previous_hypothesis:
             # 初回の場合は NEW
             simple_issue = self._extract_simple_issue(current_log)
-            probing = (
-                f"「{simple_issue}」について、今いちばん知りたいことや困っている場面はどこですか？"
-                if not is_q
-                else f"今すぐできる調べ方:\n1) 公式/信頼できるドキュメントで「{simple_issue}」を検索\n2) 事例ブログで『{simple_issue} とは』『{simple_issue} 仕組み』を調べる\n3) わかったことを一文でまとめてから次の疑問を洗い出す"
-            )
+            if is_positive:
+                probing = f"いいですね！「{simple_issue}」をきっかけに、次に取り組みたいことはありますか？"
+            elif is_q:
+                probing = f"今すぐできる調べ方:\n1) 公式/信頼できるドキュメントで「{simple_issue}」を検索\n2) 事例ブログで『{simple_issue} とは』『{simple_issue} 仕組み』を調べる\n3) わかったことを一文でまとめてから次の疑問を洗い出す"
+            else:
+                probing = f"「{simple_issue}」について、今いちばん知りたいことや気になっている場面はどこですか？"
             return {
                 "relationship_type": RelationshipType.NEW.value,
                 "relationship_reason": "初回の入力のため新規トピックとして扱う",
@@ -239,8 +470,6 @@ class StructuralAnalyzer:
         # 簡単なキーワードマッチング
         parallel_keywords = ["同じよう", "他にも", "別の", "も同様", "も起きている", "B課", "Bさん", "Cさん"]
         correction_keywords = ["違った", "間違い", "実は", "訂正", "変わった", "勘違い"]
-
-        current_lower = current_log.lower()
 
         for kw in correction_keywords:
             if kw in current_log:
@@ -270,17 +499,22 @@ class StructuralAnalyzer:
                     ),
                 }
 
-        # デフォルトは ADDITIVE
+        # デフォルトは ADDITIVE（感情方向性を考慮）
         simple_issue = self._extract_simple_issue(current_log)
+        topic = previous_hypothesis or simple_issue
+
+        if is_positive:
+            probing = f"「{topic}」、いい流れですね！この調子で次にやりたいことや活かしたいことはありますか？"
+        elif is_q:
+            probing = f"今わかっていることを一文でまとめるとどうなりますか？次に調べるキーワードを2つ挙げてみてください。"
+        else:
+            probing = f"「{topic}」をもう少し具体的にするなら、どんな状況・登場人物が関わっていますか？"
+
         return {
             "relationship_type": RelationshipType.ADDITIVE.value,
             "relationship_reason": "前回の話題に関連する追加情報と判断",
-            "updated_structural_issue": previous_hypothesis or simple_issue,
-            "probing_question": (
-                f"「{previous_hypothesis or simple_issue}」をもう少し具体的にするなら、どんな状況・登場人物が関わっていますか？"
-                if not is_q
-                else f"今わかっていることを一文でまとめるとどうなりますか？次に調べるキーワードを2つ挙げてみてください。"
-            ),
+            "updated_structural_issue": topic,
+            "probing_question": probing,
         }
 
     def _extract_simple_issue(self, content: str) -> str:

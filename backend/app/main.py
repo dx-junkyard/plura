@@ -3,12 +3,16 @@ MINDYARD - FastAPI Application
 メインアプリケーションエントリーポイント
 """
 from contextlib import asynccontextmanager
+import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
 
 from app.core.config import settings
+from app.core.trace_context import generate_trace_id, get_trace_id
+from app.core.logger import get_traced_logger
 from app.api.v1.router import api_router
 from app.db.base import engine, Base
 
@@ -63,6 +67,41 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# --- Trace ID Middleware ---
+_request_logger = get_traced_logger("Main")
+
+
+class TraceIDMiddleware(BaseHTTPMiddleware):
+    """リクエストごとに trace_id を生成し、レスポンスヘッダーに付与する"""
+
+    async def dispatch(self, request: Request, call_next):
+        trace_id = generate_trace_id()
+        start = time.monotonic()
+
+        _request_logger.info(
+            "Request received",
+            metadata={
+                "method": request.method,
+                "path": request.url.path,
+            },
+        )
+
+        response: Response = await call_next(request)
+
+        duration_ms = round((time.monotonic() - start) * 1000, 1)
+        response.headers["X-Trace-ID"] = trace_id
+
+        _request_logger.info(
+            "Response sent",
+            metadata={
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+            },
+        )
+
+        return response
+
+
 # CORS設定
 app.add_middleware(
     CORSMiddleware,
@@ -71,6 +110,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Trace ID Middleware（CORSより内側に配置）
+app.add_middleware(TraceIDMiddleware)
 
 # APIルーターの登録
 app.include_router(api_router, prefix=settings.api_v1_prefix)
@@ -113,7 +155,7 @@ async def health_check():
                 "provider": embedding_config.get("provider"),
                 "model": embedding_config.get("model"),
             },
-            "vertex_available": settings.is_vertex_available(),
+            "google_genai_available": settings.is_google_genai_available(),
             "openai_available": settings.is_openai_available(),
         },
     }

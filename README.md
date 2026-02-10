@@ -143,9 +143,8 @@ gcloud auth application-default login
 `.env` ファイルに以下を追加：
 
 ```bash
-# Vertex AI 設定
-VERTEX_PROJECT_ID=your-gcp-project-id
-VERTEX_LOCATION=us-central1  # または asia-northeast1 など
+# Google Cloud 設定
+GOOGLE_CLOUD_PROJECT=your-gcp-project-id
 
 # 例: BALANCED に Gemini を使用
 LLM_CONFIG_BALANCED='{"provider": "vertex", "model": "gemini-1.5-flash"}'

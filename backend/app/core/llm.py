@@ -122,11 +122,11 @@ class LLMManager:
                 api_key=settings.openai_api_key,
             )
         elif provider_type == "vertex":
-            from app.core.providers.vertex import VertexAIProvider
-            return VertexAIProvider(
+            from app.core.providers.google_genai import GoogleGenAIClient
+            return GoogleGenAIClient(
                 config=provider_config,
-                project_id=settings.get_vertex_project_id(),
-                location=settings.vertex_location,
+                project_id=settings.google_cloud_project,
+                location="us-central1",
             )
         else:
             raise ValueError(f"Unknown provider type: {provider_type}")

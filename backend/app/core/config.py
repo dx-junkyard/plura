@@ -62,10 +62,6 @@ class Settings(BaseSettings):
 
     # Google Cloud
     google_cloud_project: Optional[str] = None  # GOOGLE_CLOUD_PROJECT env var
-
-    # Vertex AI (Google Cloud)
-    vertex_project_id: Optional[str] = None
-    vertex_location: str = "us-central1"
     google_application_credentials: Optional[str] = None  # ADC credentials path
 
     # Embedding Configuration (Multi-Provider, JSON format)
@@ -182,13 +178,9 @@ class Settings(BaseSettings):
         """OpenAI APIが利用可能かどうか"""
         return bool(self.openai_api_key)
 
-    def get_vertex_project_id(self) -> Optional[str]:
-        """Vertex AI用のプロジェクトIDを取得（VERTEX_PROJECT_ID > GOOGLE_CLOUD_PROJECT の優先順）"""
-        return self.vertex_project_id or self.google_cloud_project
-
-    def is_vertex_available(self) -> bool:
-        """Vertex AIが利用可能かどうか（プロジェクトIDまたはADCが設定されている）"""
-        return bool(self.get_vertex_project_id())
+    def is_google_genai_available(self) -> bool:
+        """Google Gen AI (Gemini) が利用可能かどうか"""
+        return bool(self.google_cloud_project)
 
 
 @lru_cache
