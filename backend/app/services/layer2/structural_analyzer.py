@@ -273,7 +273,6 @@ class StructuralAnalyzer:
 
     def _empathy_fallback_message(self, current_log: str) -> str:
         """テンプレートベースの共感メッセージ"""
-        # ユーザーの言葉から一部を拾って共感に反映する
         preview = current_log[:30].replace("\n", " ").strip()
         if len(current_log) > 30:
             preview += "..."
@@ -288,9 +287,16 @@ class StructuralAnalyzer:
                 "無理に整理しなくても大丈夫です。まずはお気持ちをそのまま吐き出してくださいね。"
             )
 
+        # ポジティブ感情の検出
+        if self._is_positive_sentiment(current_log):
+            return (
+                f"「{preview}」…いい感じですね！"
+                "その気持ち、大切にしてくださいね。"
+            )
+
         return (
-            f"「{preview}」…気持ちが揺れているんですね。"
-            "その感覚、大切にしてください。落ち着いたら、一緒に整理していきましょう。"
+            f"「{preview}」…お気持ち、受け止めました。"
+            "落ち着いたら、一緒に整理していきましょう。"
         )
 
     def _get_system_prompt(self) -> str:
@@ -325,22 +331,38 @@ class StructuralAnalyzer:
 - CORRECTIONの場合: 新しい情報に基づいて課題を再定義
 - NEWの場合: 新しい構造的課題を定義
 
-## Step 3: 問いの生成
-更新された理解に基づき、さらに深掘りするための質問を1つ作成してください。
-質問は、ユーザーの思考を促し、構造的な問題をより明確にするものにしてください。
+## Step 3: 問いの生成（Sentiment-Aware）
+更新された理解に基づき、問いかけを1つ作成してください。
+**ユーザーの感情の方向性（ポジティブ/ネガティブ/中立）を必ず考慮すること。**
+
+### 感情方向性別のルール:
+
+1. **ポジティブ（喜び、達成、好調、楽しさ）の場合**:
+   - その良い状態を活かす方向で問いかける（次に何をしたいか、成功要因は何か等）。
+   - **禁止**: 「困っていること」「課題」「悩み」「問題点」について聞かないこと。
+   - 例: 「素晴らしいですね！その勢いで次に取り組みたいことはありますか？」
+
+2. **ネガティブ（不満、不安、課題、疲労）の場合**:
+   - その背景にある原因や、解決の糸口を探る問いかけをする。
+   - 例: 「具体的にどの部分が気になっていますか？」
+
+3. **中立・事実のみの場合**:
+   - その事実から展開される文脈や、関連する情報について問いかける。
+   - 例: 「それに関連して、今気になっていることはありますか？」
 
 必ず以下のJSON形式で応答してください:
 {
     "relationship_type": "ADDITIVE" | "PARALLEL" | "CORRECTION" | "NEW",
     "relationship_reason": "判定理由の説明",
     "updated_structural_issue": "更新された構造的課題の定義",
-    "probing_question": "QUESTIONの場合はできる限り具体的な回答、もしくは3つ以内の調査手順。その他の場合は深掘りのための問い。"
+    "probing_question": "QUESTIONの場合はできる限り具体的な回答、もしくは3つ以内の調査手順。その他の場合は感情方向性に適した問い。"
 }
 
 重要: 「問い」を作る際は次を守ってください。
 - 決まり文句を避け、ユーザーの言葉や話題を1つ以上含める。
 - 指示語だけにせず、何についての問い/回答かを明示する。
 - 共感的で圧迫感のないトーンにする。
+- ユーザーがポジティブなのに問題を探さない。ネガティブなのに無理に明るくしない。
 - QUESTIONの場合: まず簡潔に答えられる範囲で答える。確信が持てないときは「今すぐできる調べ方」を2〜3個、具体的キーワード付きで提案する。
 - BRAINSTORM/REFLECTIONの場合: 新しい洞察が出るように理由・背景・具体的状況を尋ねる。
 """
@@ -406,23 +428,38 @@ class StructuralAnalyzer:
         has_word = any(w in text for w in question_words)
         return question_mark or has_word
 
+    # ポジティブ感情キーワード（フォールバック分析用）
+    _POSITIVE_KEYWORDS = [
+        "嬉しい", "楽しい", "良い", "いい", "最高", "素晴らしい",
+        "できた", "成功", "達成", "うまくいった", "良かった",
+        "気持ちいい", "スッキリ", "いい感じ", "頑張った", "天気",
+    ]
+
+    def _is_positive_sentiment(self, text: str) -> bool:
+        """ポジティブな感情かどうかを簡易判定"""
+        negative_keywords = ["困", "大変", "うまくいかない", "最悪", "つらい", "ひどい", "嫌", "不安", "疲れ"]
+        has_negative = any(kw in text for kw in negative_keywords)
+        has_positive = any(kw in text for kw in self._POSITIVE_KEYWORDS)
+        return has_positive and not has_negative
+
     def _fallback_analyze(
         self,
         current_log: str,
         previous_hypothesis: Optional[str],
     ) -> Dict:
         """LLMが利用できない場合のフォールバック"""
-        # シンプルなルールベース分析＋質問時のガイド
         is_q = self._is_question(current_log)
+        is_positive = self._is_positive_sentiment(current_log)
 
         if not previous_hypothesis:
             # 初回の場合は NEW
             simple_issue = self._extract_simple_issue(current_log)
-            probing = (
-                f"「{simple_issue}」について、今いちばん知りたいことや困っている場面はどこですか？"
-                if not is_q
-                else f"今すぐできる調べ方:\n1) 公式/信頼できるドキュメントで「{simple_issue}」を検索\n2) 事例ブログで『{simple_issue} とは』『{simple_issue} 仕組み』を調べる\n3) わかったことを一文でまとめてから次の疑問を洗い出す"
-            )
+            if is_positive:
+                probing = f"いいですね！「{simple_issue}」をきっかけに、次に取り組みたいことはありますか？"
+            elif is_q:
+                probing = f"今すぐできる調べ方:\n1) 公式/信頼できるドキュメントで「{simple_issue}」を検索\n2) 事例ブログで『{simple_issue} とは』『{simple_issue} 仕組み』を調べる\n3) わかったことを一文でまとめてから次の疑問を洗い出す"
+            else:
+                probing = f"「{simple_issue}」について、今いちばん知りたいことや気になっている場面はどこですか？"
             return {
                 "relationship_type": RelationshipType.NEW.value,
                 "relationship_reason": "初回の入力のため新規トピックとして扱う",
@@ -433,8 +470,6 @@ class StructuralAnalyzer:
         # 簡単なキーワードマッチング
         parallel_keywords = ["同じよう", "他にも", "別の", "も同様", "も起きている", "B課", "Bさん", "Cさん"]
         correction_keywords = ["違った", "間違い", "実は", "訂正", "変わった", "勘違い"]
-
-        current_lower = current_log.lower()
 
         for kw in correction_keywords:
             if kw in current_log:
@@ -464,17 +499,22 @@ class StructuralAnalyzer:
                     ),
                 }
 
-        # デフォルトは ADDITIVE
+        # デフォルトは ADDITIVE（感情方向性を考慮）
         simple_issue = self._extract_simple_issue(current_log)
+        topic = previous_hypothesis or simple_issue
+
+        if is_positive:
+            probing = f"「{topic}」、いい流れですね！この調子で次にやりたいことや活かしたいことはありますか？"
+        elif is_q:
+            probing = f"今わかっていることを一文でまとめるとどうなりますか？次に調べるキーワードを2つ挙げてみてください。"
+        else:
+            probing = f"「{topic}」をもう少し具体的にするなら、どんな状況・登場人物が関わっていますか？"
+
         return {
             "relationship_type": RelationshipType.ADDITIVE.value,
             "relationship_reason": "前回の話題に関連する追加情報と判断",
-            "updated_structural_issue": previous_hypothesis or simple_issue,
-            "probing_question": (
-                f"「{previous_hypothesis or simple_issue}」をもう少し具体的にするなら、どんな状況・登場人物が関わっていますか？"
-                if not is_q
-                else f"今わかっていることを一文でまとめるとどうなりますか？次に調べるキーワードを2つ挙げてみてください。"
-            ),
+            "updated_structural_issue": topic,
+            "probing_question": probing,
         }
 
     def _extract_simple_issue(self, content: str) -> str:

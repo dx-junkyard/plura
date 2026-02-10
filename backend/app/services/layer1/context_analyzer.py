@@ -91,9 +91,12 @@ class ContextAnalyzer:
 
 intent の判定基準:
 - "log": 単に記録・メモしたい（事実の記述、淡々とした報告）
-- "vent": 愚痴・不満を吐き出したい（感情的な表現、不満、フラストレーション）
+- "vent": **ネガティブな感情**を吐き出したい（怒り、不満、フラストレーション、悲しみ、不安）
+  ※ポジティブな感情（嬉しい、楽しい、気分が良い）は vent ではない。
 - "structure": 整理・分析したい（「どうすれば」「なぜ」などの思考整理）
-- "state": 心身の状態や短い感情の共有（「眠い」「疲れた」「気分が良い」など。分析不要な独り言）
+- "state": 現在の状態・コンディションの報告（体調、気分、天気、短い感想など）。
+  ポジティブ（「いい天気だ」「気分が良い」）でもネガティブ（「眠い」「疲れた」）でも、
+  分析や助けを求めていない短い状態共有はすべて state に分類する。
 
 emotions の選択肢:
 - frustrated (焦り)
@@ -128,7 +131,7 @@ JSON形式で解析結果を返してください。"""
             "log": LogIntent.LOG,
             "vent": LogIntent.VENT,
             "structure": LogIntent.STRUCTURE,
-            "state": LogIntent.STATE,  # ここで正しくマッピングされます
+            "state": LogIntent.STATE,
         }
         intent = intent_map.get(intent_str, LogIntent.LOG)
 
@@ -162,43 +165,58 @@ JSON形式で解析結果を返してください。"""
         emotions = []
         emotion_scores = {}
 
-        negative_keywords = ["困った", "大変", "疲れた", "うまくいかない", "最悪", "つらい"]
-        positive_keywords = ["できた", "成功", "うまくいった", "嬉しい", "良かった", "気分よく"]
+        negative_keywords = ["困った", "大変", "うまくいかない", "最悪", "つらい", "ひどい", "嫌だ"]
+        positive_keywords = ["できた", "成功", "うまくいった", "嬉しい", "良かった", "いい天気", "気分が良い", "気分よく", "楽しい", "最高"]
         anxiety_keywords = ["不安", "心配", "どうしよう", "間に合う"]
-        state_keywords = ["眠い", "腹減った", "目覚めた", "気分"]
+        state_keywords = [
+            "眠い", "眠たい", "だるい", "疲れた", "お腹すいた", "腹減った",
+            "暑い", "寒い", "頭痛い", "天気", "気分", "体調",
+            "終わったー", "帰りたい", "目覚めた",
+        ]
 
-        content_lower = content.lower()
+        has_negative = False
+        has_positive = False
 
         for kw in negative_keywords:
             if kw in content:
                 if "frustrated" not in emotions:
                     emotions.append("frustrated")
                     emotion_scores["frustrated"] = 0.7
+                has_negative = True
 
         for kw in positive_keywords:
             if kw in content:
                 if "achieved" not in emotions:
                     emotions.append("achieved")
                     emotion_scores["achieved"] = 0.7
+                has_positive = True
 
         for kw in anxiety_keywords:
             if kw in content:
                 if "anxious" not in emotions:
                     emotions.append("anxious")
                     emotion_scores["anxious"] = 0.7
+                has_negative = True
 
         if not emotions:
             emotions = ["neutral"]
             emotion_scores["neutral"] = 0.5
 
         # インテント判定
-        # 短い文かつ状態キーワードを含む場合はSTATE
-        if len(content) < 30 and any(kw in content for kw in state_keywords):
+        # 状態共有キーワードの検出
+        has_state = any(kw in content for kw in state_keywords)
+
+        if has_state or (has_positive and not has_negative and len(content) < 30):
+            # 状態報告（ポジティブ・ネガティブ問わず短い状態共有）
             intent = LogIntent.STATE
-        elif any(kw in content for kw in ["！", "...", "なんで", "ひどい"]):
+        elif has_negative and any(kw in content for kw in ["なんで", "ひどい", "...", "愚痴", "聞いて"]):
+            # ネガティブ感情 + 吐き出しシグナル → VENT
             intent = LogIntent.VENT
         elif any(kw in content for kw in ["どうすれば", "整理", "まとめ", "なぜ"]):
             intent = LogIntent.STRUCTURE
+        elif has_negative:
+            # ネガティブだが吐き出しシグナルなし → LOG
+            intent = LogIntent.LOG
         else:
             intent = LogIntent.LOG
 
@@ -243,24 +261,24 @@ JSON形式で解析結果を返してください。"""
     def _normalize_tags(self, values: object, topics: List[str]) -> List[str]:
         # トピックをタグの候補に含める
         candidates = list(values) if isinstance(values, list) else []
-        
+
         # トピックもタグとして使える場合は追加（重複排除）
         for topic in topics:
             if topic not in candidates:
                 candidates.append(topic)
-                
+
         # ルールベースのタグ付け
-        fixed_tags = ["Private"] # デフォルトタグ
-        
+        fixed_tags = ["Private"]  # デフォルトタグ
+
         for tag in candidates:
             if not isinstance(tag, str):
                 continue
             t = tag.strip()
             if t and t not in fixed_tags:
                 fixed_tags.append(t)
-                
+
         return fixed_tags[:5]
-        
+
     def _fallback_tags(self, content: str) -> List[str]:
         tags = ["Private"]
         if "仕事" in content or "業務" in content:
@@ -269,6 +287,6 @@ JSON形式で解析結果を返してください。"""
             tags.append("Project")
         return tags
 
+
 # シングルトンインスタンス
 context_analyzer = ContextAnalyzer()
-

@@ -40,8 +40,12 @@ Based on the evaluation and current input, generate the top 2 likely intents.
 
 Available Intents:
 - `chat`: Casual, greeting.
-- `state_share`: User is expressing a physical condition (tired, sleepy, hungry) or a short fleeting emotion. They are NOT asking for help or analysis. Typically very short messages (1-5 words).
-- `empathy`: Emotional support, venting about a specific event or situation. Longer than a state share, with context.
+- `state_share`: User is reporting their current condition or a brief observation. This includes:
+  - Physical state: tired, sleepy, hungry, hot, cold
+  - Positive mood/observation: "nice weather!", "feeling great", "done for the day"
+  - Neutral status updates: short messages (1-5 words), NOT asking for help or analysis.
+  NOTE: Positive emotions ("嬉しい", "いい天気", "気持ちいい") are state_share, NOT empathy.
+- `empathy`: User is venting **negative** emotions (anger, frustration, sadness, anxiety) about a specific event or situation, and seeks emotional support. Longer than a state share, with context. Does NOT include positive feelings.
 - `knowledge`: Factual questions, "how-to".
 - `deep_dive`: Complex problem solving, analysis, structural thinking.
 - `brainstorm`: Idea generation, "what if".
@@ -70,12 +74,17 @@ Available Intents:
 # ルールベース判定のキーワードマッピング
 _KEYWORD_MAP = {
     ConversationIntent.STATE_SHARE: [
+        # ネガティブ状態
         "眠い", "眠たい", "だるい", "疲れた", "お腹すいた", "腹減った",
         "暑い", "寒い", "頭痛い", "しんど", "ねむ", "つかれ",
         "終わったー", "帰りたい", "やばい", "無理", "限界",
+        # ポジティブ状態・観察
+        "いい天気", "天気", "気持ちいい", "気分が良い", "気分いい",
+        "嬉しい", "楽しい", "最高", "いい感じ", "スッキリ",
+        "できた", "終わった", "頑張った",
     ],
     ConversationIntent.EMPATHY: [
-        "つらい", "しんどい", "疲れた", "嫌だ", "ひどい", "悲しい",
+        "つらい", "しんどい", "嫌だ", "ひどい", "悲しい",
         "不安", "怖い", "寂しい", "イライラ", "ムカつく", "最悪",
         "聞いて", "吐き出し", "愚痴", "ため息",
     ],
