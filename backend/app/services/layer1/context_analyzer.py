@@ -80,7 +80,7 @@ class ContextAnalyzer:
 
 必ず以下のJSON形式で応答してください:
 {
-    "intent": "log" | "vent" | "structure",
+    "intent": "log" | "vent" | "structure" | "state",
     "emotions": ["emotion1", "emotion2"],
     "emotion_scores": {"emotion1": 0.8, "emotion2": 0.5},
     "topics": ["topic1", "topic2"],
@@ -93,6 +93,7 @@ intent の判定基準:
 - "log": 単に記録・メモしたい（事実の記述、淡々とした報告）
 - "vent": 愚痴・不満を吐き出したい（感情的な表現、不満、フラストレーション）
 - "structure": 整理・分析したい（「どうすれば」「なぜ」などの思考整理）
+- "state": 心身の状態や短い感情の共有（「眠い」「疲れた」「気分が良い」など。分析不要な独り言）
 
 emotions の選択肢:
 - frustrated (焦り)
@@ -127,6 +128,7 @@ JSON形式で解析結果を返してください。"""
             "log": LogIntent.LOG,
             "vent": LogIntent.VENT,
             "structure": LogIntent.STRUCTURE,
+            "state": LogIntent.STATE,  # ここで正しくマッピングされます
         }
         intent = intent_map.get(intent_str, LogIntent.LOG)
 
@@ -161,8 +163,9 @@ JSON形式で解析結果を返してください。"""
         emotion_scores = {}
 
         negative_keywords = ["困った", "大変", "疲れた", "うまくいかない", "最悪", "つらい"]
-        positive_keywords = ["できた", "成功", "うまくいった", "嬉しい", "良かった"]
+        positive_keywords = ["できた", "成功", "うまくいった", "嬉しい", "良かった", "気分よく"]
         anxiety_keywords = ["不安", "心配", "どうしよう", "間に合う"]
+        state_keywords = ["眠い", "腹減った", "目覚めた", "気分"]
 
         content_lower = content.lower()
 
@@ -189,7 +192,10 @@ JSON形式で解析結果を返してください。"""
             emotion_scores["neutral"] = 0.5
 
         # インテント判定
-        if any(kw in content for kw in ["！", "...", "なんで", "ひどい"]):
+        # 短い文かつ状態キーワードを含む場合はSTATE
+        if len(content) < 30 and any(kw in content for kw in state_keywords):
+            intent = LogIntent.STATE
+        elif any(kw in content for kw in ["！", "...", "なんで", "ひどい"]):
             intent = LogIntent.VENT
         elif any(kw in content for kw in ["どうすれば", "整理", "まとめ", "なぜ"]):
             intent = LogIntent.STRUCTURE
@@ -234,25 +240,35 @@ JSON形式で解析結果を返してください。"""
         normalized = [emotion for emotion in emotions if emotion in allowed]
         return normalized or ["neutral"]
 
-    def _normalize_tags(self, values: object, topics: Optional[List[str]] = None) -> List[str]:
-        tags = self._normalize_string_list(values, max_items=8)
-        if topics:
-            for topic in topics:
-                if topic not in tags and len(tags) < 8:
-                    tags.append(topic)
-        if not tags:
-            tags = ["Uncategorized"]
-        return tags
-
+    def _normalize_tags(self, values: object, topics: List[str]) -> List[str]:
+        # トピックをタグの候補に含める
+        candidates = list(values) if isinstance(values, list) else []
+        
+        # トピックもタグとして使える場合は追加（重複排除）
+        for topic in topics:
+            if topic not in candidates:
+                candidates.append(topic)
+                
+        # ルールベースのタグ付け
+        fixed_tags = ["Private"] # デフォルトタグ
+        
+        for tag in candidates:
+            if not isinstance(tag, str):
+                continue
+            t = tag.strip()
+            if t and t not in fixed_tags:
+                fixed_tags.append(t)
+                
+        return fixed_tags[:5]
+        
     def _fallback_tags(self, content: str) -> List[str]:
-        work_keywords = ["案件", "プロジェクト", "会議", "顧客", "開発", "仕様", "タスク", "仕事"]
-        idea_keywords = ["アイデア", "仮説", "案", "改善", "試したい"]
-
-        tags = ["Work" if any(kw in content for kw in work_keywords) else "Private"]
-        if any(kw in content for kw in idea_keywords):
-            tags.append("Idea")
+        tags = ["Private"]
+        if "仕事" in content or "業務" in content:
+            tags.append("Work")
+        if "プロジェクト" in content:
+            tags.append("Project")
         return tags
-
 
 # シングルトンインスタンス
 context_analyzer = ContextAnalyzer()
+
