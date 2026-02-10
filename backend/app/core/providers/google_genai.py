@@ -159,7 +159,7 @@ class GoogleGenAIClient(LLMProvider):
             system_instruction=system_instruction,
         )
 
-        response = await self.client.models.generate_content_async(
+        response = await self.client.aio.models.generate_content(
             model=self.config.model,
             contents=contents,
             config=config,
