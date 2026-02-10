@@ -14,7 +14,7 @@ from openai import AsyncOpenAI
 from app.api.deps import get_current_user
 from app.db.base import get_async_session
 from app.models.user import User
-from app.models.raw_log import RawLog
+from app.models.raw_log import RawLog, LogIntent
 from app.schemas.raw_log import (
     RawLogCreate,
     RawLogResponse,
@@ -78,16 +78,23 @@ async def create_log(
         # 解析エラーは無視（後でリトライ可能）
         pass
 
-    # 構造分析タスクを非同期でキック
-    # Celery タスクとしてバックグラウンドで実行
-    try:
-        analyze_log_structure.delay(str(log.id))
-    except Exception:
-        # タスクキューが利用不可でもログ作成は成功させる
-        pass
+    # 状態共有（STATE）は即時の共感応答のみ返し、構造分析は実行しない
+    if log.intent != LogIntent.STATE:
+        # 構造分析タスクを非同期でキック
+        # Celery タスクとしてバックグラウンドで実行
+        try:
+            analyze_log_structure.delay(str(log.id))
+        except Exception:
+            # タスクキューが利用不可でもログ作成は成功させる
+            pass
 
     # 受容的な相槌を返す
-    return AckResponse.create_ack(log_id=log.id, intent=log.intent)
+    return AckResponse.create_ack(
+        log_id=log.id,
+        intent=log.intent,
+        emotions=log.emotions,
+        content=log.content,
+    )
 
 
 @router.get("/", response_model=RawLogListResponse)
@@ -289,17 +296,21 @@ async def transcribe_audio(
             # 解析エラーは無視
             pass
 
-        # 構造分析タスクを非同期でキック
-        try:
-            analyze_log_structure.delay(str(log.id))
-        except Exception:
-            # タスクキューが利用不可でもログ作成は成功させる
-            pass
+        # 状態共有（STATE）は即時の共感応答のみ返し、構造分析は実行しない
+        if log.intent != LogIntent.STATE:
+            # 構造分析タスクを非同期でキック
+            try:
+                analyze_log_structure.delay(str(log.id))
+            except Exception:
+                # タスクキューが利用不可でもログ作成は成功させる
+                pass
 
         # 受容的な相槌を返す（音声入力の場合は文字起こしテキストも含める）
         return AckResponse.create_ack(
             log_id=log.id,
             intent=log.intent,
+            emotions=log.emotions,
+            content=log.content,
             transcribed_text=transcribed_text,
         )
 

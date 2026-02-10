@@ -70,15 +70,37 @@ class AckResponse(BaseModel):
     log_id: uuid.UUID
     timestamp: datetime
     transcribed_text: Optional[str] = None  # 音声入力時の文字起こしテキスト
+    skip_structural_analysis: bool = False
 
     @classmethod
     def create_ack(
         cls,
         log_id: uuid.UUID,
         intent: Optional[LogIntent] = None,
+        emotions: Optional[List[str]] = None,
+        content: Optional[str] = None,
         transcribed_text: Optional[str] = None,
     ) -> "AckResponse":
         """意図に応じた相槌を生成"""
+        if intent == LogIntent.STATE:
+            positive_emotions = {"achieved", "excited", "relieved"}
+            has_positive_emotion = bool(emotions and any(e in positive_emotions for e in emotions))
+            positive_keywords = ("良い", "いい", "最高", "嬉しい", "楽しい", "気持ちいい", "うれしい", "よかった")
+            has_positive_keyword = bool(content and any(kw in content for kw in positive_keywords))
+
+            if has_positive_emotion or has_positive_keyword:
+                state_message = "いいですね。その気持ち、すてきです。"
+            else:
+                state_message = "記録しました。お疲れさまです。"
+
+            return cls(
+                message=state_message,
+                log_id=log_id,
+                timestamp=datetime.now(),
+                transcribed_text=transcribed_text,
+                skip_structural_analysis=True,
+            )
+
         ack_messages = {
             LogIntent.LOG: [
                 "記録しました。",
@@ -107,4 +129,5 @@ class AckResponse(BaseModel):
             log_id=log_id,
             timestamp=datetime.now(),
             transcribed_text=transcribed_text,
+            skip_structural_analysis=False,
         )

@@ -21,7 +21,7 @@ export interface Token {
 }
 
 // Log Intent
-export type LogIntent = 'log' | 'vent' | 'structure';
+export type LogIntent = 'log' | 'vent' | 'structure' | 'state';
 
 // Model Info
 export interface ModelInfo {
@@ -69,6 +69,7 @@ export interface AckResponse {
   log_id: string;
   timestamp: string;
   transcribed_text?: string;  // 音声入力時の文字起こしテキスト
+  skip_structural_analysis?: boolean;
 }
 
 // Insight Card (Layer 3)

@@ -226,19 +226,22 @@ export function ThoughtStream() {
     try {
       const response: AckResponse = await api.createLog(input.trim());
 
-      const systemMessage: Message = {
-        id: response.log_id,
-        type: 'system',
-        content: response.message,
-        timestamp: new Date(response.timestamp),
-        logId: response.log_id,
-      };
+      if (response.message?.trim()) {
+        const systemMessage: Message = {
+          id: response.log_id,
+          type: 'system',
+          content: response.message,
+          timestamp: new Date(response.timestamp),
+          logId: response.log_id,
+        };
+        setMessages((prev) => [...prev, systemMessage]);
+      }
 
-      setMessages((prev) => [...prev, systemMessage]);
-
-      // 構造分析のポーリングを開始
-      setPendingLogIds(prev => [...prev, response.log_id]);
-      initializeAnalysisSteps();
+      if (!response.skip_structural_analysis) {
+        // 構造分析のポーリングを開始
+        setPendingLogIds(prev => [...prev, response.log_id]);
+        initializeAnalysisSteps();
+      }
     } catch (error) {
       const errorMessage: Message = {
         id: Date.now().toString(),
@@ -401,12 +404,16 @@ MINDYARD で思考を整理しました`;
           logId: response.log_id,
         };
 
-        return [...filtered, userMessage, systemMessage];
+        return response.message?.trim()
+          ? [...filtered, userMessage, systemMessage]
+          : [...filtered, userMessage];
       });
 
-      // 構造分析のポーリングを開始
-      setPendingLogIds(prev => [...prev, response.log_id]);
-      initializeAnalysisSteps();
+      if (!response.skip_structural_analysis) {
+        // 構造分析のポーリングを開始
+        setPendingLogIds(prev => [...prev, response.log_id]);
+        initializeAnalysisSteps();
+      }
     } catch (error) {
       console.error('音声送信エラー:', error);
 
