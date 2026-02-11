@@ -70,6 +70,7 @@ class AckResponse(BaseModel):
 
     message: str
     log_id: uuid.UUID
+    thread_id: uuid.UUID  # スレッドID（フロントが次の送信で使う）
     timestamp: datetime
     transcribed_text: Optional[str] = None  # 音声入力時の文字起こしテキスト
     skip_structural_analysis: bool = False
@@ -79,6 +80,7 @@ class AckResponse(BaseModel):
     def create_ack(
         cls,
         log_id: uuid.UUID,
+        thread_id: Optional[uuid.UUID] = None,
         intent: Optional[LogIntent] = None,
         emotions: Optional[List[str]] = None,
         content: Optional[str] = None,
@@ -101,6 +103,7 @@ class AckResponse(BaseModel):
             return cls(
                 message=state_message,
                 log_id=log_id,
+                thread_id=thread_id or log_id,
                 timestamp=datetime.now(),
                 transcribed_text=transcribed_text,
                 skip_structural_analysis=True,
@@ -133,6 +136,7 @@ class AckResponse(BaseModel):
         return cls(
             message=message,
             log_id=log_id,
+            thread_id=thread_id or log_id,
             timestamp=datetime.now(),
             transcribed_text=transcribed_text,
             skip_structural_analysis=False,
