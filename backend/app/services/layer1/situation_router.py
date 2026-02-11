@@ -14,6 +14,7 @@ class SituationResult:
     """状況分類の結果"""
     situation_type: str  # continuation, imperative, same_topic_short, topic_switch, criticism_then_topic, vent, question, generic
     resolved_topic: Optional[str] = None  # 会話で触れるべきテーマ（前の課題 or 抽出した本題）
+    do_mode: bool = False  # True = 実行・結論指向（Do）, False = 対話・共感指向（Talk）
 
 
 # 続き希望の表現（「続ける」「続けて」も短いときは続き希望）
@@ -110,6 +111,53 @@ def _is_imperative_command(text: str) -> bool:
     return any(t.endswith(e) for e in imperative_endings)
 
 
+def _is_do_intent(text: str) -> bool:
+    """
+    Do モード判定: 結論・手順・実装・比較・設計など、具体的な成果物を求める発話。
+    「〜して」「作って」「直して」「実装」「比較」「設計」「書いて」「教えて（方法）」等。
+    """
+    t = text.replace("\n", " ").strip()
+    if not t:
+        return False
+
+    # 明確な実行指示の語尾
+    do_endings = (
+        "せよ", "しろ", "して", "してくれ", "してください",
+        "やれ", "やって", "やってくれ", "やってください",
+        "始めろ", "始めて", "始めてくれ", "始めてください",
+        "作れ", "作って", "作ってくれ", "作ってください",
+        "実行して", "実行しろ", "実行せよ",
+        "進めて", "進めろ", "進めてくれ",
+        "書いて", "書いてくれ", "書いてください",
+        "直して", "直してくれ", "直してください",
+        "調べて", "調べてくれ", "調べてください",
+        "出して", "出してくれ", "出してください",
+        "まとめて", "まとめてくれ", "まとめてください",
+        "整理して", "整理してくれ", "整理してください",
+    )
+    if any(t.endswith(e) for e in do_endings):
+        return True
+
+    # 実行指向キーワード（文中のどこかに含まれる）
+    do_keywords = (
+        "実装", "コーディング", "設計", "比較", "リファクタ",
+        "デプロイ", "テスト", "デバッグ", "手順", "方法",
+        "ステップ", "コマンド", "スクリプト", "SQL", "API",
+        "コードを", "プログラムを", "アプリを", "サービスを",
+        "作成する", "構築する", "開発する", "修正する",
+        "書き出し", "メリット", "デメリット", "リスト",
+        "計画を", "設計を", "仕様を", "要件を",
+    )
+    if any(kw in t for kw in do_keywords):
+        return True
+
+    # 「〇〇を作成」「〇〇を実装」パターン
+    if re.search(r"を\s*(作成|実装|構築|開発|設計|修正|作る|書く|出す)", t):
+        return True
+
+    return False
+
+
 def _is_correction_or_clarification(text: str) -> bool:
     """「〇〇は関係ない」「違う」「そうじゃない」など、直前の問いへの訂正・補足"""
     t = text.replace("\n", " ").strip()
@@ -132,21 +180,27 @@ class SituationRouter:
     ) -> SituationResult:
         """
         発話内容と前の話題から状況を分類する。
+        do_mode: 実行・結論指向（Do）かどうかを判定し、フラグに設定。
         previous_topic: 同一スレッドの直前の構造的課題（あれば）
         """
         text = (content or "").strip()
+
+        # ── Do / Talk モード判定（全分岐共通で使う） ──
+        do = _is_do_intent(text)
 
         if _is_continuation(text):
             return SituationResult(
                 situation_type="continuation",
                 resolved_topic=previous_topic,
+                do_mode=do,
             )
 
-        # 「作成せよ」「やれ」など命令形 → 前の話題の実行指示として continuation 扱い
+        # 「作成せよ」「やれ」など命令形 → 前の話題の実行指示
         if _is_imperative_command(text) and previous_topic:
             return SituationResult(
                 situation_type="imperative",
                 resolved_topic=previous_topic,
+                do_mode=True,  # 命令形は常に Do
             )
 
         # 「人物は関係ない」など直前の問いへの訂正・補足 → 受け止めて問いを変える
@@ -154,6 +208,7 @@ class SituationRouter:
             return SituationResult(
                 situation_type="correction",
                 resolved_topic=previous_topic,
+                do_mode=False,
             )
 
         topic_after_criticism = _extract_topic_after_criticism(text)
@@ -161,6 +216,7 @@ class SituationRouter:
             return SituationResult(
                 situation_type="criticism_then_topic",
                 resolved_topic=topic_after_criticism,
+                do_mode=do,
             )
 
         if _is_topic_switch(text):
@@ -171,28 +227,43 @@ class SituationRouter:
             return SituationResult(
                 situation_type="topic_switch",
                 resolved_topic=resolved or None,
+                do_mode=do,
             )
 
         if _is_vent_like(text):
-            return SituationResult(situation_type="vent", resolved_topic=None)
+            return SituationResult(
+                situation_type="vent",
+                resolved_topic=None,
+                do_mode=False,  # 感情吐き出しは常に Talk
+            )
 
         if _is_question(text):
-            return SituationResult(situation_type="question", resolved_topic=previous_topic)
+            return SituationResult(
+                situation_type="question",
+                resolved_topic=previous_topic,
+                do_mode=do,
+            )
 
-        # 「困っていない、一緒に考察しよう」など → 前の話題のまま、一緒に考える返答にする
+        # 「困っていない、一緒に考察しよう」など
         if _is_collaborative_or_rejecting_problem(text) and previous_topic:
             return SituationResult(
                 situation_type="same_topic_short",
                 resolved_topic=previous_topic,
+                do_mode=do,
             )
 
         if _same_topic_short(text, previous_topic):
             return SituationResult(
                 situation_type="same_topic_short",
                 resolved_topic=previous_topic,
+                do_mode=do,
             )
 
-        return SituationResult(situation_type="generic", resolved_topic=previous_topic)
+        return SituationResult(
+            situation_type="generic",
+            resolved_topic=previous_topic,
+            do_mode=do,
+        )
 
 
 situation_router = SituationRouter()
