@@ -12,7 +12,7 @@ from typing import Optional
 @dataclass
 class SituationResult:
     """状況分類の結果"""
-    situation_type: str  # continuation, same_topic_short, topic_switch, criticism_then_topic, vent, question, generic
+    situation_type: str  # continuation, imperative, same_topic_short, topic_switch, criticism_then_topic, vent, question, generic
     resolved_topic: Optional[str] = None  # 会話で触れるべきテーマ（前の課題 or 抽出した本題）
 
 
@@ -92,6 +92,24 @@ def _is_collaborative_or_rejecting_problem(text: str) -> bool:
     return any(p in t for p in phrases)
 
 
+def _is_imperative_command(text: str) -> bool:
+    """「作成せよ」「やれ」「実行して」など、前の話題に対する命令・指示"""
+    t = text.replace("\n", " ").strip()
+    if not t or len(t) > 60:
+        return False
+    # 「〜せよ」「〜しろ」「〜して」「〜やって」「〜やれ」「〜始めろ」「〜お願い」 など
+    imperative_endings = (
+        "せよ", "しろ", "して", "してくれ", "してください",
+        "やれ", "やって", "やってくれ", "やってください",
+        "始めろ", "始めて", "始めてくれ", "始めてください",
+        "作れ", "作って", "作ってくれ", "作ってください",
+        "実行して", "実行しろ", "実行せよ",
+        "お願い", "お願いします", "頼む", "頼んだ",
+        "進めて", "進めろ", "進めてくれ",
+    )
+    return any(t.endswith(e) for e in imperative_endings)
+
+
 def _is_correction_or_clarification(text: str) -> bool:
     """「〇〇は関係ない」「違う」「そうじゃない」など、直前の問いへの訂正・補足"""
     t = text.replace("\n", " ").strip()
@@ -121,6 +139,13 @@ class SituationRouter:
         if _is_continuation(text):
             return SituationResult(
                 situation_type="continuation",
+                resolved_topic=previous_topic,
+            )
+
+        # 「作成せよ」「やれ」など命令形 → 前の話題の実行指示として continuation 扱い
+        if _is_imperative_command(text) and previous_topic:
+            return SituationResult(
+                situation_type="imperative",
                 resolved_topic=previous_topic,
             )
 

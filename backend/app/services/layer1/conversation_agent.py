@@ -162,10 +162,32 @@ class ConversationAgent:
         thread_id: Optional[object] = None,
     ) -> List[Tuple[str, Optional[str]]]:
         """
-        同一スレッドの会話履歴を時系列で取得する。
+        会話履歴を時系列で取得する。
+        1. まず同一スレッド内の履歴を探す。
+        2. スレッド内に履歴がなければ（新規スレッド）、ユーザーの
+           直近ログをスレッド横断で取得する（文脈を失わないため）。
         各ログの (user_content, assistant_reply) のペアを返す。
         """
-        q = (
+        # ── 1. 同一スレッド内の履歴 ──
+        if thread_id is not None:
+            q_thread = (
+                select(RawLog)
+                .where(
+                    RawLog.user_id == user_id,
+                    RawLog.thread_id == thread_id,
+                    RawLog.id != exclude_log_id,
+                )
+                .order_by(desc(RawLog.created_at))
+                .limit(CONVERSATION_HISTORY_LIMIT)
+            )
+            result = await session.execute(q_thread)
+            logs = list(result.scalars().all())
+            if logs:
+                logs.reverse()
+                return [(log.content, log.assistant_reply) for log in logs]
+
+        # ── 2. フォールバック: スレッド横断で直近ログを取得 ──
+        q_global = (
             select(RawLog)
             .where(
                 RawLog.user_id == user_id,
@@ -174,11 +196,9 @@ class ConversationAgent:
             .order_by(desc(RawLog.created_at))
             .limit(CONVERSATION_HISTORY_LIMIT)
         )
-        if thread_id is not None:
-            q = q.where(RawLog.thread_id == thread_id)
-        result = await session.execute(q)
+        result = await session.execute(q_global)
         logs = list(result.scalars().all())
-        logs.reverse()  # 時系列順にする
+        logs.reverse()
         return [(log.content, log.assistant_reply) for log in logs]
 
     def _build_messages(
@@ -192,6 +212,9 @@ class ConversationAgent:
         ai-agent-playground-101 方式: system + 過去のやり取り + 今回の発話。
         SituationRouter の結果はシステムプロンプトに短いヒントとして追加し、
         ユーザー発話は一切改変しない（自然さを保つため）。
+
+        短い発話（命令形など）+ 履歴がある場合は、直近ログの要約を
+        システムプロンプトに注入して LLM が文脈を確実に把握できるようにする。
         """
         # システムプロンプト
         system_prompt = _CONVERSATION_SYSTEM_PROMPT
@@ -201,6 +224,19 @@ class ConversationAgent:
             hint = self._situation_hint(situation)
             if hint:
                 system_prompt += f"\n\n【今回の状況ヒント】\n{hint}"
+
+        # ── 短い発話 + 履歴あり → 直近の会話コンテキストを明示的に要約して注入 ──
+        is_short_utterance = len(new_content.strip()) <= 30
+        if is_short_utterance and history:
+            context_summary = self._summarize_recent_context(history)
+            if context_summary:
+                system_prompt += (
+                    f"\n\n【直近の会話コンテキスト（重要）】\n"
+                    f"ユーザーの発話が短いため、直前の会話内容を以下に要約します。"
+                    f"この文脈を踏まえて応答してください。"
+                    f"「何についてですか？」のような聞き返しは禁止。\n\n"
+                    f"{context_summary}"
+                )
 
         messages: List[dict] = [{"role": "system", "content": system_prompt}]
 
@@ -213,6 +249,42 @@ class ConversationAgent:
         # 今回のユーザー発話（改変しない）
         messages.append({"role": "user", "content": new_content})
         return messages
+
+    @staticmethod
+    def _summarize_recent_context(
+        history: List[Tuple[str, Optional[str]]],
+        max_chars: int = 1500,
+    ) -> Optional[str]:
+        """
+        直近の会話履歴から要約テキストを生成する。
+        LLM を使わず、直近のユーザー発話を連結して文脈として提供する。
+        長い発話は冒頭を切り出し、全体で max_chars に収める。
+        """
+        if not history:
+            return None
+
+        parts: List[str] = []
+        total = 0
+        # 新しい方から辿り、最大 max_chars 分を収集
+        for user_content, assistant_reply in reversed(history):
+            snippet = user_content.strip()
+            if len(snippet) > 400:
+                snippet = snippet[:400] + "…（省略）"
+            entry = f"- ユーザー: {snippet}"
+            if assistant_reply:
+                reply_snippet = assistant_reply.strip()
+                if len(reply_snippet) > 200:
+                    reply_snippet = reply_snippet[:200] + "…"
+                entry += f"\n  AI: {reply_snippet}"
+            if total + len(entry) > max_chars:
+                break
+            parts.append(entry)
+            total += len(entry)
+
+        if not parts:
+            return None
+        parts.reverse()
+        return "\n".join(parts)
 
     @staticmethod
     def _situation_hint(situation: "SituationResult") -> Optional[str]:
@@ -228,6 +300,14 @@ class ConversationAgent:
                 f"相手は前の話題の「続き」を希望しています。"
                 f"履歴にある話題の具体的な内容を踏まえて、前回の会話を発展させてください。"
                 f"「その続きですね」のような薄い返答は禁止。前回の具体的な論点に言及すること。"
+            )
+        elif st == "imperative":
+            return (
+                f"相手は「{topic}」に関して行動・実行を指示しています。"
+                f"履歴に具体的な計画や内容があるはずです。それを踏まえて、"
+                f"次の具体的なアクションステップを提示してください。"
+                f"「何を作成しますか？」のような聞き返しは絶対に禁止。"
+                f"履歴の文脈から何をすべきかは明らかなので、すぐに実行に移る返答をすること。"
             )
         elif st == "correction":
             return (

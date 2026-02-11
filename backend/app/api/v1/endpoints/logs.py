@@ -110,8 +110,12 @@ async def create_log(
     except Exception:
         pass
 
-    # 同一スレッド内の直前の構造的課題を取得（Situation Router 用）
+    # 直前の構造的課題を取得（Situation Router 用）
+    # 1. 同一スレッド内を探す → 2. なければスレッド横断で直近ログを参照
     previous_topic = None
+    prev_log = None
+
+    # ── 1. 同一スレッド内 ──
     if log.thread_id:
         prev_result = await session.execute(
             select(RawLog)
@@ -124,11 +128,25 @@ async def create_log(
             .limit(1)
         )
         prev_log = prev_result.scalar_one_or_none()
-        if prev_log and prev_log.structural_analysis:
-            previous_topic = (
-                prev_log.structural_analysis.get("updated_structural_issue")
-                or prev_log.structural_analysis.get("structural_issue")
+
+    # ── 2. フォールバック: スレッド横断で直近ログ ──
+    if prev_log is None:
+        fallback_result = await session.execute(
+            select(RawLog)
+            .where(
+                RawLog.user_id == current_user.id,
+                RawLog.id != log.id,
             )
+            .order_by(desc(RawLog.created_at))
+            .limit(1)
+        )
+        prev_log = fallback_result.scalar_one_or_none()
+
+    if prev_log and prev_log.structural_analysis:
+        previous_topic = (
+            prev_log.structural_analysis.get("updated_structural_issue")
+            or prev_log.structural_analysis.get("structural_issue")
+        )
 
     # 状況をコードで分類し、会話エージェントに渡す
     situation = situation_router.classify(log_in.content, previous_topic)
