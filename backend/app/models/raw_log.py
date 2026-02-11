@@ -74,6 +74,14 @@ class RawLog(Base):
         index=True,
     )
 
+    # 会話スレッド（同一 thread_id = 同じ会話。NULL は旧データ互換）
+    thread_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
+        comment="同じ会話の先頭ログの id。NULL の場合は新規スレッド扱いで commit 後に id をセット",
+    )
+
     # コンテンツ
     content: Mapped[str] = mapped_column(
         Text,
@@ -117,6 +125,13 @@ class RawLog(Base):
         JSONB,
         nullable=True,
         comment="StructuralAnalyzer による構造的課題分析結果",
+    )
+
+    # 会話エージェントによる自然言語返答（ラリー用）
+    assistant_reply: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="ConversationAgent が生成した会話返答",
     )
 
     # 処理状態

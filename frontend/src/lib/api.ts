@@ -89,11 +89,19 @@ class ApiClient {
   }
 
   // Logs (Layer 1)
-  async createLog(content: string, content_type: string = 'text'): Promise<AckResponse> {
-    const { data } = await this.client.post<AckResponse>('/logs/', {
+  async createLog(
+    content: string,
+    content_type: string = 'text',
+    thread_id?: string | null
+  ): Promise<AckResponse> {
+    const body: { content: string; content_type: string; thread_id?: string } = {
       content,
       content_type,
-    });
+    };
+    if (thread_id != null && thread_id !== '') {
+      body.thread_id = thread_id;
+    }
+    const { data } = await this.client.post<AckResponse>('/logs/', body);
     return data;
   }
 

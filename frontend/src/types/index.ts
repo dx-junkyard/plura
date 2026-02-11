@@ -43,6 +43,7 @@ export interface StructuralAnalysis {
 export interface RawLog {
   id: string;
   user_id: string;
+  thread_id: string | null;  // 同一会話の先頭ログ id（続きのとき）
   content: string;
   content_type: string;
   intent: LogIntent | null;
@@ -50,6 +51,7 @@ export interface RawLog {
   emotion_scores: Record<string, number> | null;
   topics: string[] | null;
   structural_analysis: StructuralAnalysis | null;
+  assistant_reply: string | null;  // 会話エージェントの自然言語返答
   is_analyzed: boolean;
   is_processed_for_insight: boolean;
   is_structure_analyzed: boolean;
@@ -70,6 +72,7 @@ export interface AckResponse {
   timestamp: string;
   transcribed_text?: string;  // 音声入力時の文字起こしテキスト
   skip_structural_analysis?: boolean;
+  conversation_reply?: string; // 会話エージェントが生成した自然な返答（ラリー用）
 }
 
 // Insight Card (Layer 3)

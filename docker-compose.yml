@@ -3,6 +3,8 @@ version: "3.8"
 services:
   nginx:
     image: nginx:latest
+    profiles:
+      - with-nginx  # ローカル開発では不要。本番・ngrok 利用時のみ
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -10,6 +12,8 @@ services:
       - backend
 
   ngrok:
+    profiles:
+      - with-nginx
     image: ngrok/ngrok:latest
     command:
       - "http"
@@ -39,11 +43,12 @@ services:
       retries: 5
 
   # Redis (Celery Broker & Cache)
+  # ホスト側は 6380 に変更（ローカルで 6379 が使用中の場合の競合回避）
   redis:
     image: redis:7-alpine
     container_name: mindyard-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -53,12 +58,13 @@ services:
       retries: 5
 
   # Qdrant Vector Database
+  # ホスト側を 6335/6336 に変更（6333/6334 が使用中の場合の競合回避）
   qdrant:
     image: qdrant/qdrant:latest
     container_name: mindyard-qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "6335:6333"
+      - "6336:6334"
     volumes:
       - qdrant_data:/qdrant/storage
     environment:

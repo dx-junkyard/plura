@@ -20,7 +20,7 @@ from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer2.privacy_sanitizer import privacy_sanitizer
 from app.services.layer2.insight_distiller import insight_distiller
 from app.services.layer2.sharing_broker import sharing_broker
-from app.services.layer2.structural_analyzer import structural_analyzer
+from app.services.layer2.structural_analyzer import structural_analyzer, is_continuation_phrase
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -161,26 +161,29 @@ def analyze_log_structure(self, log_id: str):
                     return [t for t in tokens if len(t) > 1 and t not in stop]
 
                 current_tokens = set(_normalize(log.content))
+                # 「続きから」「続きで」等のときはトークン重なりで履歴を捨てない（直前ログを必ず使う）
+                use_overlap_filter = not is_continuation_phrase(log.content or "")
 
-                # Step 1: 履歴取得 - 同じユーザーの直近5件のログを取得（今回のログを除く）
-                history_result = await session.execute(
-                    select(RawLog)
-                    .where(
-                        RawLog.user_id == log.user_id,
-                        RawLog.id != log.id,
-                    )
-                    .order_by(RawLog.created_at.desc())
-                    .limit(5)
-                )
+                # Step 1: 履歴取得 - 同一スレッドがあればそのスレッド内の直近5件、なければ従来どおりユーザー直近5件
+                history_query = select(RawLog).where(
+                    RawLog.user_id == log.user_id,
+                    RawLog.id != log.id,
+                ).order_by(RawLog.created_at.desc()).limit(5)
+                if getattr(log, "thread_id", None) is not None:
+                    history_query = history_query.where(RawLog.thread_id == log.thread_id)
+                history_result = await session.execute(history_query)
                 candidates = history_result.scalars().all()
 
                 past_logs = []
                 for prev in candidates:
-                    overlap = current_tokens & set(_normalize(prev.content))
-                    if overlap:
-                        past_logs.append(prev)
+                    if use_overlap_filter:
+                        overlap = current_tokens & set(_normalize(prev.content))
+                        if overlap:
+                            past_logs.append(prev)
+                        else:
+                            logger.info(f"[structural] skip history log {prev.id} (no topical overlap)")
                     else:
-                        logger.info(f"[structural] skip history log {prev.id} (no topical overlap)")
+                        past_logs.append(prev)
 
                 # Step 2: 前回仮説の抽出
                 previous_hypothesis = None

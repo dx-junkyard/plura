@@ -311,7 +311,13 @@ class StructuralAnalyzer:
 - QUESTION: 具体的な情報ややり方を尋ねている
 - BRAINSTORM: アイデア出し・検討・選択肢を探している
 - REFLECTION: 思考整理・振り返り・自分の考えを深めたい
+- CONTINUATION: 「じゃあ続きから」「続きで」「続きお願い」など、前の話題の続きを希望するだけの短い発話（新しいテーマを述べていない）
+- COLLABORATIVE: 「困っていない」「一緒に考察しよう」「一緒に考えよう」など、問題枠を否定し前の話題を一緒に考えたい発話（新しいテーマの提示ではない）
 - OTHER: 上記以外
+
+**CONTINUATION の場合**: updated_structural_issue は直前の仮説をそのまま返す。probing_question はその話題の続きについての問いにすること。入力文を課題にしない。
+**COLLABORATIVE の場合**: updated_structural_issue は直前の仮説をそのまま返す。ユーザー発言を構造的課題にしない。probing_question は前のテーマで協働を促す問いにする。
+**訂正・補足（「〇〇は関係ない」「違う」）の場合**: updated_structural_issue は直前の仮説のまま。ユーザー発言を課題にしない。直前の問いを繰り返さず、別の切り口で probing_question を作る（例: 「人物は関係ない」→ 登場人物を聞かず「テーマや状況の観点から、どこから深めますか？」）。
 
 ## Step 1: 関係性判定 (Relationship Classification)
 今回の入力は、直前の仮説に対してどのような関係にあるか判定してください。
@@ -325,30 +331,48 @@ class StructuralAnalyzer:
 ## Step 2: 構造的理解の統合・更新 (Update Understanding)
 判定結果に基づき、「現在の構造的課題（Current Structural Issue）」を書き換えてください。
 
+- 重要: ユーザーが「聞き方・質問がおかしい」「変だ」などと批判している場合、または「〇〇について考察したい」と話題を指定している場合は、批判文やメタ発言そのものではなく、「ユーザーがこれから扱いたいテーマ」だけを構造的課題として抽出する。例: 「その聞き方おかしいな。ブランド力について考察しよう」→ 課題は「ブランド力についての考察」であり、「その聞き方おかしいな」は課題に含めない。
 - ADDITIVEの場合: より詳細・具体的な課題定義に更新
 - PARALLELの場合: 個別の事象を包含する、より抽象度の高い課題名に更新
   例：「A課長の承認フロー」→「組織全体の権限委譲の欠如」
 - CORRECTIONの場合: 新しい情報に基づいて課題を再定義
-- NEWの場合: 新しい構造的課題を定義
+- NEWの場合: 新しい構造的課題を定義（ユーザーが話題にしたいテーマを短いフレーズで）
 
-## Step 3: 問いの生成（Sentiment-Aware）
-更新された理解に基づき、問いかけを1つ作成してください。
-**ユーザーの感情の方向性（ポジティブ/ネガティブ/中立）を必ず考慮すること。**
+## Step 3: 構造的な問いの生成
+更新された理解に基づき、ユーザーの思考を**構造的に深める**問いを1つ作成してください。
+**会話相手（チャットボット）が既に表面的な返答をしているため、ここではより深い分析的な問いを出す。**
 
-### 感情方向性別のルール:
+### この問いの役割（会話返答との差別化）
+- 会話返答は「共感・受け止め」を担当する。
+- ここで出す問いは「思考の構造化・深掘り・パターン発見」を担当する。
+- したがって「どんな分野に興味がありますか？」のような**表面的な質問は絶対に出さない**。
 
-1. **ポジティブ（喜び、達成、好調、楽しさ）の場合**:
-   - その良い状態を活かす方向で問いかける（次に何をしたいか、成功要因は何か等）。
-   - **禁止**: 「困っていること」「課題」「悩み」「問題点」について聞かないこと。
-   - 例: 「素晴らしいですね！その勢いで次に取り組みたいことはありますか？」
+### 問いの品質基準
+1. **具体的な切り口を含む**: テーマに関連する具体的な概念・フレームワーク・対比軸を提示する
+2. **思考を構造化する**: 「なぜ」「どの条件で」「何と比較して」など、分析の軸を示す
+3. **ユーザーが自分でも気づいていない論点を提示する**: 表面に出ていない前提や暗黙の仮定を引き出す
 
-2. **ネガティブ（不満、不安、課題、疲労）の場合**:
-   - その背景にある原因や、解決の糸口を探る問いかけをする。
-   - 例: 「具体的にどの部分が気になっていますか？」
+### 感情方向性への配慮
+- **ポジティブ**: その成功や良い状態の要因分析や再現条件に踏み込む。「困っていること」は聞かない。
+- **ネガティブ**: 背景にある構造的原因（人・仕組み・環境）を切り分ける問いにする。
+- **中立**: 事実の背後にある意思決定や優先順位の構造に踏み込む。
 
-3. **中立・事実のみの場合**:
-   - その事実から展開される文脈や、関連する情報について問いかける。
-   - 例: 「それに関連して、今気になっていることはありますか？」
+### 良い問いと悪い問いの例
+
+悪い例（汎用テンプレート — 禁止）:
+  「発電のどの側面について特に研究を進めたいと考えていますか？」
+  「〇〇について、今いちばん知りたいことはどこですか？」
+
+良い例（構造的な問い）:
+  「発電の研究で、今いちばんブレイクスルーが必要だと感じているのは、効率の壁ですか？それともコストやインフラの制約ですか？」
+  「その課題は、技術的なボトルネックと組織的なボトルネック、どちらの比重が大きいですか？」
+  「もし制約が一つだけ外せるとしたら、何を外しますか？」
+
+### その他ルール
+- ユーザーの発言全文をそのまま問いに埋め込まない。
+- 同じ話題が続いているとき、前回と同じ形式の問いを繰り返さず、別の分析軸から切り込む。
+- 訂正・補足があったら、その要素を避けて別の切り口で問う。
+- 決まり文句を避け、テーマ固有の具体的な言葉を使う。
 
 必ず以下のJSON形式で応答してください:
 {
@@ -359,7 +383,11 @@ class StructuralAnalyzer:
 }
 
 重要: 「問い」を作る際は次を守ってください。
-- 決まり文句を避け、ユーザーの言葉や話題を1つ以上含める。
+- updated_structural_issue には「ユーザーが今扱いたいテーマ」だけを入れる。批判・メタ発言（「おかしい」「〇〇しよう」の前の文など）は入れない。
+- probing_question は、そのテーマについての深掘り問いにする。ユーザー発言全文を「〇〇について知りたいことは？」の〇〇にしない。
+- 同じ話題が続いているとき（ADDITIVEで課題が前回とほぼ同じ）は、同じ長いテンプレ問いを繰り返さず、短い自然な問いにする。
+- ユーザーが「〇〇は関係ない」と訂正したら、その要素（例: 登場人物）を聞く問いは繰り返さず、別の切り口（テーマ・状況など）で問う。
+- 決まり文句を避け、テーマに関連する言葉を1つ以上含める。
 - 指示語だけにせず、何についての問い/回答かを明示する。
 - 共感的で圧迫感のないトーンにする。
 - ユーザーがポジティブなのに問題を探さない。ネガティブなのに無理に明るくしない。
@@ -448,6 +476,33 @@ class StructuralAnalyzer:
         previous_hypothesis: Optional[str],
     ) -> Dict:
         """LLMが利用できない場合のフォールバック"""
+        # 「続きから」「続きで」等のときは前の課題をそのまま使い、その話題で問いを立てる
+        if self._is_continuation_phrase(current_log) and previous_hypothesis:
+            return {
+                "relationship_type": RelationshipType.ADDITIVE.value,
+                "relationship_reason": "続きを希望する発話のため、前の話題を維持",
+                "updated_structural_issue": previous_hypothesis,
+                "probing_question": f"「{previous_hypothesis}」の続きですね。どこから話しますか？",
+            }
+
+        # 「困っていない、一緒に考察しよう」等 → 前の話題を維持し、一緒に考える問いにする（発話を課題にしない）
+        if self._is_collaborative_or_rejecting_problem(current_log) and previous_hypothesis:
+            return {
+                "relationship_type": RelationshipType.ADDITIVE.value,
+                "relationship_reason": "一緒に考察したい旨のため、前の話題を維持",
+                "updated_structural_issue": previous_hypothesis,
+                "probing_question": f"では「{previous_hypothesis}」について、一緒に考えていきましょう。どこから深めますか？",
+            }
+
+        # 「人物は関係ない」等の訂正 → 前の話題を維持し、登場人物を聞かない問いに変える
+        if self._is_correction_or_clarification(current_log) and previous_hypothesis:
+            return {
+                "relationship_type": RelationshipType.ADDITIVE.value,
+                "relationship_reason": "訂正・補足のため前の話題を維持し、問いの角度を変える",
+                "updated_structural_issue": previous_hypothesis,
+                "probing_question": f"では「{previous_hypothesis}」について、テーマや状況の観点から、どこから深めますか？",
+            }
+
         is_q = self._is_question(current_log)
         is_positive = self._is_positive_sentiment(current_log)
 
@@ -455,11 +510,11 @@ class StructuralAnalyzer:
             # 初回の場合は NEW
             simple_issue = self._extract_simple_issue(current_log)
             if is_positive:
-                probing = f"いいですね！「{simple_issue}」をきっかけに、次に取り組みたいことはありますか？"
+                probing = f"「{simple_issue}」がうまくいった要因は何だと思いますか？再現できそうですか？"
             elif is_q:
                 probing = f"今すぐできる調べ方:\n1) 公式/信頼できるドキュメントで「{simple_issue}」を検索\n2) 事例ブログで『{simple_issue} とは』『{simple_issue} 仕組み』を調べる\n3) わかったことを一文でまとめてから次の疑問を洗い出す"
             else:
-                probing = f"「{simple_issue}」について、今いちばん知りたいことや気になっている場面はどこですか？"
+                probing = f"「{simple_issue}」で、今いちばんブレイクスルーが必要だと感じているのはどこですか？技術的な壁？それとも別の制約？"
             return {
                 "relationship_type": RelationshipType.NEW.value,
                 "relationship_reason": "初回の入力のため新規トピックとして扱う",
@@ -499,16 +554,23 @@ class StructuralAnalyzer:
                     ),
                 }
 
-        # デフォルトは ADDITIVE（感情方向性を考慮）
+        # デフォルトは ADDITIVE（感情方向性を考慮 + 同一話題の繰り返し回避）
         simple_issue = self._extract_simple_issue(current_log)
         topic = previous_hypothesis or simple_issue
+        # 同じ話題の短い言及のときは、長いテンプレを繰り返さず短い問いにする
+        same_topic = previous_hypothesis and (
+            simple_issue in previous_hypothesis or previous_hypothesis in simple_issue
+            or (len(simple_issue) <= 20 and any(w in previous_hypothesis for w in simple_issue.split()))
+        )
 
         if is_positive:
-            probing = f"「{topic}」、いい流れですね！この調子で次にやりたいことや活かしたいことはありますか？"
+            probing = f"「{topic}」がうまくいっている要因を分解すると、何が一番効いていますか？"
+        elif same_topic and not is_q:
+            probing = f"「{topic}」を別の角度から見ると、一番見落としがちな論点は何でしょう？"
         elif is_q:
-            probing = f"今わかっていることを一文でまとめるとどうなりますか？次に調べるキーワードを2つ挙げてみてください。"
+            probing = f"今わかっていることを一文でまとめるとどうなりますか？まだ検証できていない仮説があれば、それも一緒に。"
         else:
-            probing = f"「{topic}」をもう少し具体的にするなら、どんな状況・登場人物が関わっていますか？"
+            probing = f"「{topic}」の根っこにある構造的な原因は何だと思いますか？人の問題？仕組みの問題？環境の問題？"
 
         return {
             "relationship_type": RelationshipType.ADDITIVE.value,
@@ -517,14 +579,61 @@ class StructuralAnalyzer:
             "probing_question": probing,
         }
 
+    def _is_continuation_phrase(self, text: str) -> bool:
+        """「続きから」「続きで」「続ける」「続けて」など、前の話題の続きを希望する短い発話かどうか。"""
+        t = text.replace("\n", " ").strip()
+        if not t or len(t) > 50:
+            return False
+        continuations = (
+            "続きから", "続きで", "続きを", "続きお願い", "続き", "つづきから", "つづきで",
+            "じゃあ続きから", "じゃあ続き", "では続き", "それでは続き", "続きからお願い",
+            "続ける", "続けて", "つづける", "つづけて",
+        )
+        if t in ("続き", "つづき", "続ける", "続けて", "つづける", "つづけて"):
+            return True
+        return any(c in t for c in continuations)
+
+    def _is_collaborative_or_rejecting_problem(self, text: str) -> bool:
+        """「困っていない」「一緒に考察しよう」など、問題枠を否定して前の話題を一緒に考えたい発話。"""
+        t = (text or "").replace("\n", " ").strip()
+        if not t or len(t) > 80:
+            return False
+        phrases = (
+            "困っていない", "困ってない", "一緒に考察", "一緒に考え", "一緒に話そう", "一緒に話し",
+            "考察しよう", "考えよう", "考えていこう", "深めよう",
+        )
+        return any(p in t for p in phrases)
+
+    def _is_correction_or_clarification(self, text: str) -> bool:
+        """「〇〇は関係ない」「違う」「そうじゃない」など、直前の問いへの訂正・補足。"""
+        t = (text or "").replace("\n", " ").strip()
+        if not t or len(t) > 100:
+            return False
+        phrases = (
+            "関係ない", "関係なく", "そうじゃない", "そうではない", "違う", "ちがう",
+            "人物は関係", "状況は関係", "それは関係",
+        )
+        return any(p in t for p in phrases)
+
     def _extract_simple_issue(self, content: str) -> str:
-        """コンテンツからシンプルな課題を抽出"""
-        # 最初の50文字を課題として使用
-        issue = content[:50].replace("\n", " ").strip()
-        if len(content) > 50:
+        """コンテンツからシンプルな課題（テーマ）を抽出。批判・メタ発言は除き、話題部分を優先する。"""
+        text = content.replace("\n", " ").strip()
+        # 冒頭が批判・メタ発言っぽい場合（「その〜」「この〜」で短い文の後、句点で区切られている）は後ろをテーマとする
+        if "。" in text:
+            first, rest = text.split("。", 1)
+            rest = rest.strip()
+            if rest and len(first) <= 30 and (first.startswith(("その", "この", "あの", "その聞き", "その質問")) or "おかしい" in first or "変だ" in first):
+                text = rest
+        issue = text[:50].strip()
+        if len(text) > 50:
             issue += "..."
-        return issue
+        return issue or content[:30]
 
 
 # シングルトンインスタンス
 structural_analyzer = StructuralAnalyzer()
+
+
+def is_continuation_phrase(text: str) -> bool:
+    """「続きから」「続きで」など、前の話題の続きを希望する発話かどうか（ワーカー等から利用）"""
+    return structural_analyzer._is_continuation_phrase(text)
