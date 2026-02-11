@@ -74,6 +74,15 @@ class TracedLogger:
     ) -> None:
         self._logger.debug(message, **self._build_event(message, metadata), **kwargs)
 
+    def exception(
+        self,
+        message: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        """ERROR レベルでログ出力し、現在の例外のスタックトレースを含める"""
+        self._logger.exception(message, **self._build_event(message, metadata), **kwargs)
+
 
 def trace_execution(
     module: str,

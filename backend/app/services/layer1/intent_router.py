@@ -176,25 +176,55 @@ class IntentRouter:
             "classify started",
             metadata={
                 "input_preview": input_text[:80],
+                "input_length": len(input_text),
                 "has_prev_context": prev_context is not None,
+                "prev_intent": prev_context.get("previous_intent") if prev_context else None,
             },
         )
 
         # 探索的な問いの予備的検知
         is_exploratory = self._check_exploratory(input_text)
+        logger.info(
+            "Exploratory keyword check",
+            metadata={
+                "is_exploratory": is_exploratory,
+                "input_preview": input_text[:80],
+            },
+        )
 
         provider = self._get_provider()
         if not provider:
+            logger.warning(
+                "LLM provider unavailable, falling back to keyword-based classification",
+            )
             result = self._fallback_classify(input_text)
+            logger.info(
+                "Keyword fallback classification result",
+                metadata={
+                    "selected_route": result["intent"].value,
+                    "primary_intent": result["primary_intent"].value,
+                    "primary_confidence": result["primary_confidence"],
+                    "secondary_intent": result["secondary_intent"].value,
+                    "secondary_confidence": result["secondary_confidence"],
+                    "needs_probing": result["needs_probing"],
+                },
+            )
             # 探索的な問いの場合、knowledge へ誘導し requires_deep_research を立てる
             if is_exploratory:
                 result["intent"] = ConversationIntent.KNOWLEDGE
                 result["primary_intent"] = ConversationIntent.KNOWLEDGE
                 result["requires_deep_research"] = True
+                logger.info(
+                    "requires_deep_research set to True (keyword fallback + exploratory)",
+                    metadata={
+                        "reason": "exploratory keywords detected in fallback path",
+                        "selected_route": "knowledge",
+                    },
+                )
             logger.info(
                 "classify completed (fallback)",
                 metadata={
-                    "intent": result["intent"].value,
+                    "final_route": result["intent"].value,
                     "confidence": result["confidence"],
                     "requires_deep_research": result.get("requires_deep_research", False),
                     "method": "keyword_fallback",
@@ -216,6 +246,7 @@ class IntentRouter:
         full_input = f"{context_str}\nCurrent Input: {input_text}" if context_str else input_text
 
         try:
+            logger.info("LLM classification starting", metadata={"provider": type(provider).__name__})
             await provider.initialize()
             result = await provider.generate_json(
                 messages=[
@@ -224,22 +255,59 @@ class IntentRouter:
                 ],
                 temperature=0.2,
             )
+            logger.info(
+                "LLM raw classification result",
+                metadata={
+                    "raw_primary_intent": result.get("primary_intent"),
+                    "raw_primary_confidence": result.get("primary_confidence"),
+                    "raw_secondary_intent": result.get("secondary_intent"),
+                    "raw_secondary_confidence": result.get("secondary_confidence"),
+                    "raw_needs_probing": result.get("needs_probing"),
+                    "raw_reasoning": str(result.get("reasoning", ""))[:200],
+                },
+            )
             parsed = self._parse_hypothesis_result(result)
+
+            logger.info(
+                "LLM parsed route selection",
+                metadata={
+                    "selected_route": parsed["intent"].value,
+                    "primary_intent": parsed["primary_intent"].value,
+                    "primary_confidence": parsed["primary_confidence"],
+                    "secondary_intent": parsed["secondary_intent"].value,
+                    "needs_probing": parsed["needs_probing"],
+                },
+            )
 
             # 探索的な問いの場合、knowledge ノードへ誘導し、requires_deep_research を立てる
             if is_exploratory and parsed["primary_intent"] == ConversationIntent.KNOWLEDGE:
                 parsed["requires_deep_research"] = True
+                logger.info(
+                    "requires_deep_research set to True (LLM knowledge + exploratory)",
+                    metadata={
+                        "reason": "LLM chose knowledge AND exploratory keywords detected",
+                    },
+                )
             elif is_exploratory:
                 # LLM が knowledge 以外と判断しても、探索的キーワードがあれば
                 # knowledge に上書きして内部知識検索を優先する
+                original_intent = parsed["intent"].value
                 parsed["intent"] = ConversationIntent.KNOWLEDGE
                 parsed["primary_intent"] = ConversationIntent.KNOWLEDGE
                 parsed["requires_deep_research"] = True
+                logger.info(
+                    "requires_deep_research set to True (exploratory override)",
+                    metadata={
+                        "reason": "exploratory keywords detected, overriding LLM intent",
+                        "original_intent": original_intent,
+                        "overridden_to": "knowledge",
+                    },
+                )
 
             logger.info(
-                "classify completed",
+                "classify completed (LLM)",
                 metadata={
-                    "intent": parsed["intent"].value,
+                    "final_route": parsed["intent"].value,
                     "primary_intent": parsed["primary_intent"].value,
                     "primary_confidence": parsed["primary_confidence"],
                     "secondary_intent": parsed["secondary_intent"].value,
@@ -251,15 +319,21 @@ class IntentRouter:
             )
             return parsed
         except Exception as e:
-            logger.warning(
-                "classify failed, using fallback",
-                metadata={"error": str(e)},
+            logger.exception(
+                "LLM classify FAILED with exception, falling back to keyword-based",
+                metadata={
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                },
             )
             result = self._fallback_classify(input_text)
             if is_exploratory:
                 result["intent"] = ConversationIntent.KNOWLEDGE
                 result["primary_intent"] = ConversationIntent.KNOWLEDGE
                 result["requires_deep_research"] = True
+                logger.info(
+                    "requires_deep_research set to True (exception fallback + exploratory)",
+                )
             return result
 
     def _get_system_prompt(self) -> str:

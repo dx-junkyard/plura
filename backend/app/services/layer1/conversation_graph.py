@@ -567,8 +567,70 @@ async def run_conversation(
         "requires_deep_research": False,
     }
 
-    # グラフ実行
-    result = await app_graph.ainvoke(initial_state)
+    logger.info(
+        "Graph initial state constructed",
+        metadata={
+            "state_keys": list(initial_state.keys()),
+            "input_text": input_text[:100],
+            "mode_override": mode_override,
+            "research_offered": research_offered,
+            "pending_research_query": pending_research_query[:80] if pending_research_query else None,
+        },
+    )
+
+    # グラフ実行（astream でステップごとのノード実行をトレース）
+    logger.info("Graph execution starting (astream)")
+    graph_start = time.monotonic()
+    result = dict(initial_state)
+    step_count = 0
+
+    try:
+        async for step_output in app_graph.astream(initial_state):
+            step_count += 1
+            step_elapsed_ms = round((time.monotonic() - graph_start) * 1000, 1)
+            for node_name, node_state in step_output.items():
+                state_keys = list(node_state.keys()) if isinstance(node_state, dict) else []
+                logger.info(
+                    f"Graph step #{step_count}: node '{node_name}' completed",
+                    metadata={
+                        "step": step_count,
+                        "node": node_name,
+                        "elapsed_ms": step_elapsed_ms,
+                        "output_keys": state_keys,
+                        "intent": node_state.get("intent") if isinstance(node_state, dict) else None,
+                        "response_preview": (
+                            node_state.get("response", "")[:100]
+                            if isinstance(node_state, dict) else None
+                        ),
+                    },
+                )
+                if isinstance(node_state, dict):
+                    result.update(node_state)
+    except Exception as e:
+        graph_elapsed_ms = round((time.monotonic() - graph_start) * 1000, 1)
+        logger.exception(
+            "Graph execution FAILED with exception",
+            metadata={
+                "steps_completed": step_count,
+                "elapsed_ms": graph_elapsed_ms,
+                "error_type": type(e).__name__,
+                "error": str(e),
+            },
+        )
+        raise
+
+    graph_elapsed_ms = round((time.monotonic() - graph_start) * 1000, 1)
+    logger.info(
+        "Graph execution completed",
+        metadata={
+            "total_steps": step_count,
+            "total_duration_ms": graph_elapsed_ms,
+            "final_intent": result.get("intent"),
+            "final_response_preview": result.get("response", "")[:100],
+            "requires_deep_research": result.get("requires_deep_research"),
+            "research_offered": result.get("research_offered"),
+        },
+    )
 
     # Intent Badge 生成
     intent_value = result.get("intent", "chat")

@@ -111,6 +111,14 @@ async def _check_sufficiency(
     answer: str,
 ) -> Dict[str, Any]:
     """内部知識の回答が十分かどうかを判定"""
+    logger.info(
+        "_check_sufficiency started",
+        metadata={
+            "query_preview": query[:100],
+            "knowledge_context_length": len(knowledge_context),
+            "answer_length": len(answer),
+        },
+    )
     try:
         prompt = _SUFFICIENCY_CHECK_PROMPT.format(
             query=query,
@@ -124,13 +132,33 @@ async def _check_sufficiency(
             ],
             temperature=0.1,
         )
-        return {
+        sufficiency = {
             "is_sufficient": bool(result.get("is_sufficient", True)),
             "reason": result.get("reason", ""),
             "suggested_research_query": result.get("suggested_research_query"),
         }
+        logger.info(
+            "_check_sufficiency completed",
+            metadata={
+                "is_sufficient": sufficiency["is_sufficient"],
+                "reason": sufficiency["reason"][:200],
+                "has_suggested_query": sufficiency["suggested_research_query"] is not None,
+                "suggested_query_preview": (
+                    sufficiency["suggested_research_query"][:100]
+                    if sufficiency["suggested_research_query"] else None
+                ),
+            },
+        )
+        return sufficiency
     except Exception as e:
-        logger.warning("Sufficiency check failed", metadata={"error": str(e)})
+        logger.exception(
+            "_check_sufficiency FAILED with exception (defaulting to is_sufficient=True)",
+            metadata={
+                "error_type": type(e).__name__,
+                "error": str(e),
+                "query_preview": query[:100],
+            },
+        )
         return {"is_sufficient": True, "reason": "", "suggested_research_query": None}
 
 
@@ -146,9 +174,22 @@ async def run_knowledge_node(state: Dict[str, Any]) -> Dict[str, Any]:
     input_text = state["input_text"]
     user_id = state.get("user_id", "")
     requires_deep_research = state.get("requires_deep_research", False)
+
+    logger.info(
+        "run_knowledge_node started",
+        metadata={
+            "input_preview": input_text[:100],
+            "user_id": user_id,
+            "requires_deep_research": requires_deep_research,
+        },
+    )
+
     provider = _get_provider()
 
     if not provider:
+        logger.warning(
+            "LLM provider unavailable in knowledge_node, returning placeholder response",
+        )
         return {
             "response": "お調べします。少々お待ちください。",
             "background_task_info": None,
@@ -158,19 +199,23 @@ async def run_knowledge_node(state: Dict[str, Any]) -> Dict[str, Any]:
         await provider.initialize()
 
         # A. Layer 3 内部知識検索
-        logger.info("Searching internal knowledge base", metadata={"query_preview": input_text[:100]})
+        logger.info("Step A: Searching internal knowledge base", metadata={"query_preview": input_text[:100]})
         knowledge_results = await _search_internal_knowledge(input_text)
         knowledge_context = _format_knowledge_results(knowledge_results)
         logger.info(
-            "Internal knowledge search completed",
-            metadata={"result_count": len(knowledge_results)},
+            "Step A: Internal knowledge search completed",
+            metadata={
+                "result_count": len(knowledge_results),
+                "context_length": len(knowledge_context),
+                "has_results": len(knowledge_results) > 0,
+            },
         )
 
         # B. 内部知識を踏まえた即時回答の生成
         system_prompt = _KNOWLEDGE_ANSWER_PROMPT.format(
             knowledge_context=knowledge_context,
         )
-        logger.info("LLM request (knowledge answer)", metadata={"prompt_preview": input_text[:100]})
+        logger.info("Step B: LLM request (knowledge answer)", metadata={"prompt_preview": input_text[:100]})
         answer_result = await provider.generate_text(
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -179,21 +224,34 @@ async def run_knowledge_node(state: Dict[str, Any]) -> Dict[str, Any]:
             temperature=0.3,
         )
         quick_answer = answer_result.content
-        logger.info("LLM response (knowledge answer)", metadata={"response_preview": quick_answer[:100]})
+        logger.info(
+            "Step B: LLM response (knowledge answer)",
+            metadata={
+                "response_length": len(quick_answer),
+                "response_preview": quick_answer[:100],
+            },
+        )
 
         # C. 追加調査の提案判定（requires_deep_research フラグが立っている場合）
         research_offered = False
         pending_research_query = None
 
         if requires_deep_research:
+            logger.info(
+                "Step C: requires_deep_research=True, running sufficiency check",
+            )
             sufficiency = await _check_sufficiency(
                 provider, input_text, knowledge_context, quick_answer,
             )
             logger.info(
-                "Sufficiency check result",
+                "Step C: Sufficiency check result",
                 metadata={
                     "is_sufficient": sufficiency["is_sufficient"],
-                    "reason": sufficiency["reason"],
+                    "reason": sufficiency["reason"][:200],
+                    "suggested_research_query": (
+                        sufficiency.get("suggested_research_query", "")[:100]
+                        if sufficiency.get("suggested_research_query") else None
+                    ),
                 },
             )
 
@@ -210,9 +268,35 @@ async def run_knowledge_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 research_offered = True
                 pending_research_query = research_query
                 logger.info(
-                    "Research proposal offered",
-                    metadata={"research_query": research_query[:100]},
+                    "Step C: Research proposal GENERATED and appended to response",
+                    metadata={
+                        "research_query": research_query[:100],
+                        "research_offered": True,
+                    },
                 )
+            else:
+                logger.info(
+                    "Step C: Sufficiency check passed, no research proposal needed",
+                    metadata={
+                        "is_sufficient": True,
+                        "reason": sufficiency["reason"][:200],
+                    },
+                )
+        else:
+            logger.info(
+                "Step C: Skipped sufficiency check (requires_deep_research=False)",
+            )
+
+        logger.info(
+            "run_knowledge_node completed",
+            metadata={
+                "response_length": len(quick_answer),
+                "research_offered": research_offered,
+                "pending_research_query_preview": (
+                    pending_research_query[:80] if pending_research_query else None
+                ),
+            },
+        )
 
         return {
             "response": quick_answer,
@@ -222,7 +306,15 @@ async def run_knowledge_node(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.warning("LLM call failed", metadata={"error": str(e)})
+        logger.exception(
+            "run_knowledge_node FAILED with exception",
+            metadata={
+                "error_type": type(e).__name__,
+                "error": str(e),
+                "input_preview": input_text[:100],
+                "requires_deep_research": requires_deep_research,
+            },
+        )
         return {
             "response": "お調べします。少々お待ちください。",
             "background_task_info": None,
