@@ -64,8 +64,21 @@ _SUFFICIENCY_CHECK_PROMPT = """以下のユーザーの質問と、内部知識�
 
 def _get_provider() -> Optional[LLMProvider]:
     try:
-        return llm_manager.get_client(LLMUsageRole.FAST)
-    except Exception:
+        provider = llm_manager.get_client(LLMUsageRole.FAST)
+        logger.info(
+            "LLM provider acquired for knowledge_node",
+            metadata={"provider_type": type(provider).__name__},
+        )
+        return provider
+    except Exception as e:
+        logger.exception(
+            "Failed to acquire LLM provider for knowledge_node (will return placeholder)",
+            metadata={
+                "error_type": type(e).__name__,
+                "error": str(e),
+                "role": LLMUsageRole.FAST.value,
+            },
+        )
         return None
 
 

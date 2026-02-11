@@ -3,7 +3,6 @@ MINDYARD - Google Gen AI Provider
 Google Gen AI SDK (google-genai) を使用するLLMプロバイダー実装
 """
 import json
-import logging
 import re
 from typing import Any, Dict, List, Optional, Type, TypeVar
 
@@ -17,9 +16,10 @@ from app.core.llm_provider import (
     LLMResponse,
     ProviderType,
 )
+from app.core.logger import get_traced_logger
 
 
-logger = logging.getLogger(__name__)
+logger = get_traced_logger("GoogleGenAI")
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -81,11 +81,20 @@ class GoogleGenAIClient(LLMProvider):
         if self._initialized:
             return
 
+        logger.info(
+            "Initializing Google Gen AI client",
+            metadata={
+                "project_id": self._project_id,
+                "location": self._location,
+                "model": self.config.model,
+            },
+        )
+
         if not self._project_id:
-            logger.critical(
+            logger.error(
                 "GOOGLE_CLOUD_PROJECT is not set. "
-                "Google Gen AI provider requires a GCP project ID. "
-                "Set the GOOGLE_CLOUD_PROJECT environment variable."
+                "Google Gen AI provider requires a GCP project ID.",
+                metadata={"project_id": self._project_id},
             )
             raise ValueError(
                 "GOOGLE_CLOUD_PROJECT is not set. "
@@ -99,9 +108,25 @@ class GoogleGenAIClient(LLMProvider):
                 location=self._location,
             )
             self._initialized = True
+            logger.info(
+                "Google Gen AI client initialized successfully",
+                metadata={
+                    "project_id": self._project_id,
+                    "location": self._location,
+                    "client_type": type(self._client).__name__,
+                },
+            )
 
         except Exception as e:
-            logger.critical(f"Failed to initialize Google Gen AI client: {e}")
+            logger.exception(
+                "Failed to initialize Google Gen AI client",
+                metadata={
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                    "project_id": self._project_id,
+                    "location": self._location,
+                },
+            )
             raise RuntimeError(f"Failed to initialize Google Gen AI: {e}")
 
     @property
@@ -149,38 +174,66 @@ class GoogleGenAIClient(LLMProvider):
         max_tokens: Optional[int] = None,
     ) -> LLMResponse:
         """テキスト生成"""
-        await self.initialize()
-
-        system_instruction, contents = self._convert_messages_to_gemini_format(messages)
-
-        config = types.GenerateContentConfig(
-            temperature=temperature or self.config.temperature,
-            max_output_tokens=max_tokens or self.config.max_tokens,
-            system_instruction=system_instruction,
+        logger.info(
+            "generate_text called",
+            metadata={
+                "model": self.config.model,
+                "message_count": len(messages),
+                "temperature": temperature,
+            },
         )
+        try:
+            await self.initialize()
 
-        response = await self.client.aio.models.generate_content(
-            model=self.config.model,
-            contents=contents,
-            config=config,
-        )
+            system_instruction, contents = self._convert_messages_to_gemini_format(messages)
 
-        content = response.text if response.text else ""
+            config = types.GenerateContentConfig(
+                temperature=temperature or self.config.temperature,
+                max_output_tokens=max_tokens or self.config.max_tokens,
+                system_instruction=system_instruction,
+            )
 
-        usage = None
-        if response.usage_metadata:
-            usage = {
-                "prompt_tokens": response.usage_metadata.prompt_token_count,
-                "completion_tokens": response.usage_metadata.candidates_token_count,
-                "total_tokens": response.usage_metadata.total_token_count,
-            }
+            response = await self.client.aio.models.generate_content(
+                model=self.config.model,
+                contents=contents,
+                config=config,
+            )
 
-        return LLMResponse(
-            content=content,
-            model=self.config.model,
-            provider=self.provider_type,
-            usage=usage,
-        )
+            content = response.text if response.text else ""
+
+            usage = None
+            if response.usage_metadata:
+                usage = {
+                    "prompt_tokens": response.usage_metadata.prompt_token_count,
+                    "completion_tokens": response.usage_metadata.candidates_token_count,
+                    "total_tokens": response.usage_metadata.total_token_count,
+                }
+
+            logger.info(
+                "generate_text completed",
+                metadata={
+                    "model": self.config.model,
+                    "content_length": len(content),
+                    "usage": usage,
+                },
+            )
+
+            return LLMResponse(
+                content=content,
+                model=self.config.model,
+                provider=self.provider_type,
+                usage=usage,
+            )
+        except Exception as e:
+            logger.exception(
+                "generate_text FAILED",
+                metadata={
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                    "model": self.config.model,
+                },
+            )
+            raise
 
     async def generate_json(
         self,
@@ -188,6 +241,14 @@ class GoogleGenAIClient(LLMProvider):
         temperature: Optional[float] = None,
     ) -> Dict[str, Any]:
         """JSON形式での出力生成"""
+        logger.info(
+            "generate_json called",
+            metadata={
+                "model": self.config.model,
+                "message_count": len(messages),
+                "temperature": temperature,
+            },
+        )
         await self.initialize()
 
         system_instruction, contents = self._convert_messages_to_gemini_format(messages)
@@ -211,24 +272,60 @@ class GoogleGenAIClient(LLMProvider):
                 config=config,
             )
             content = response.text if response.text else "{}"
-            return json.loads(content)
+            parsed = json.loads(content)
+            logger.info(
+                "generate_json completed (JSON mode)",
+                metadata={
+                    "model": self.config.model,
+                    "content_length": len(content),
+                },
+            )
+            return parsed
 
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "generate_json JSON mode failed, falling back to text extraction",
+                metadata={
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                    "model": self.config.model,
+                },
+            )
             # JSON modeが失敗した場合、通常のテキスト生成でJSON抽出を試みる
-            config = types.GenerateContentConfig(
-                temperature=temperature or self.config.temperature,
-                system_instruction=system_instruction,
-            )
-            response = await self.client.aio.models.generate_content
-                model=self.config.model,
-                contents=contents,
-                config=config,
-            )
-            content = response.text if response.text else ""
-            result = extract_json_from_text(content)
-            if result is None:
-                raise ValueError(f"Failed to extract JSON from response: {content[:200]}...")
-            return result
+            try:
+                config = types.GenerateContentConfig(
+                    temperature=temperature or self.config.temperature,
+                    system_instruction=system_instruction,
+                )
+                response = await self.client.aio.models.generate_content(
+                    model=self.config.model,
+                    contents=contents,
+                    config=config,
+                )
+                content = response.text if response.text else ""
+                result = extract_json_from_text(content)
+                if result is None:
+                    raise ValueError(f"Failed to extract JSON from response: {content[:200]}...")
+                logger.info(
+                    "generate_json completed (text extraction fallback)",
+                    metadata={
+                        "model": self.config.model,
+                        "content_length": len(content),
+                    },
+                )
+                return result
+            except Exception as fallback_e:
+                logger.exception(
+                    "generate_json FAILED (both JSON mode and text extraction)",
+                    metadata={
+                        "original_error_type": type(e).__name__,
+                        "original_error": str(e),
+                        "fallback_error_type": type(fallback_e).__name__,
+                        "fallback_error": str(fallback_e),
+                        "model": self.config.model,
+                    },
+                )
+                raise
 
     async def generate_structured_output(
         self,
@@ -241,6 +338,14 @@ class GoogleGenAIClient(LLMProvider):
 
         Geminiのresponse_schemaを使用して構造化出力を生成。
         """
+        logger.info(
+            "generate_structured_output called",
+            metadata={
+                "model": self.config.model,
+                "response_model": response_model.__name__,
+                "message_count": len(messages),
+            },
+        )
         await self.initialize()
 
         system_instruction, contents = self._convert_messages_to_gemini_format(messages)
@@ -260,12 +365,36 @@ class GoogleGenAIClient(LLMProvider):
             )
             content = response.text if response.text else "{}"
             data = json.loads(content)
+            logger.info(
+                "generate_structured_output completed (schema mode)",
+                metadata={"model": self.config.model},
+            )
             return response_model.model_validate(data)
 
-        except Exception:
-            # フォールバック: 通常のJSON生成
-            result = await self.generate_json(messages, temperature)
-            return response_model.model_validate(result)
+        except Exception as e:
+            logger.warning(
+                "generate_structured_output schema mode failed, falling back to generate_json",
+                metadata={
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                    "model": self.config.model,
+                },
+            )
+            try:
+                result = await self.generate_json(messages, temperature)
+                return response_model.model_validate(result)
+            except Exception as fallback_e:
+                logger.exception(
+                    "generate_structured_output FAILED (both schema and JSON fallback)",
+                    metadata={
+                        "original_error_type": type(e).__name__,
+                        "original_error": str(e),
+                        "fallback_error_type": type(fallback_e).__name__,
+                        "fallback_error": str(fallback_e),
+                        "model": self.config.model,
+                    },
+                )
+                raise
 
     def is_reasoning_model(self) -> bool:
         """

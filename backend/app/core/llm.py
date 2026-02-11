@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Type, TypeVar
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.core.logger import get_traced_logger
 from app.core.llm_provider import (
     LLMProvider,
     LLMProviderConfig,
@@ -19,6 +20,8 @@ from app.core.llm_provider import (
     LLMUsageRole,
     ProviderType,
 )
+
+_logger = get_traced_logger("LLMManager")
 
 
 T = TypeVar("T", bound=BaseModel)
@@ -108,6 +111,16 @@ class LLMManager:
         temperature = config.get("temperature", 0.3)
         max_tokens = config.get("max_tokens")
 
+        _logger.info(
+            "Creating LLM provider",
+            metadata={
+                "provider_type": provider_type,
+                "model": model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+        )
+
         provider_config = LLMProviderConfig(
             provider=ProviderType(provider_type),
             model=model,
@@ -115,21 +128,46 @@ class LLMManager:
             max_tokens=max_tokens,
         )
 
-        if provider_type == "openai":
-            from app.core.providers.openai import OpenAIProvider
-            return OpenAIProvider(
-                config=provider_config,
-                api_key=settings.openai_api_key,
+        try:
+            if provider_type == "openai":
+                from app.core.providers.openai import OpenAIProvider
+                provider = OpenAIProvider(
+                    config=provider_config,
+                    api_key=settings.openai_api_key,
+                )
+                _logger.info(
+                    "OpenAI provider created",
+                    metadata={"model": model},
+                )
+                return provider
+            elif provider_type == "vertex":
+                from app.core.providers.google_genai import GoogleGenAIClient
+                provider = GoogleGenAIClient(
+                    config=provider_config,
+                    project_id=settings.google_cloud_project,
+                    location="us-central1",
+                )
+                _logger.info(
+                    "Google GenAI (Vertex) provider created",
+                    metadata={
+                        "model": model,
+                        "project_id": settings.google_cloud_project,
+                    },
+                )
+                return provider
+            else:
+                raise ValueError(f"Unknown provider type: {provider_type}")
+        except Exception as e:
+            _logger.exception(
+                "Failed to create LLM provider",
+                metadata={
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                    "provider_type": provider_type,
+                    "model": model,
+                },
             )
-        elif provider_type == "vertex":
-            from app.core.providers.google_genai import GoogleGenAIClient
-            return GoogleGenAIClient(
-                config=provider_config,
-                project_id=settings.google_cloud_project,
-                location="us-central1",
-            )
-        else:
-            raise ValueError(f"Unknown provider type: {provider_type}")
+            raise
 
     def _get_cache_key(self, role: LLMUsageRole) -> str:
         """キャッシュキーを生成"""
@@ -146,14 +184,42 @@ class LLMManager:
         Returns:
             設定に基づいた適切なLLMProviderインスタンス
         """
-        cache_key = self._get_cache_key(role)
+        try:
+            cache_key = self._get_cache_key(role)
 
-        if cache_key not in self._providers:
-            config = settings.get_llm_config(role.value)
-            provider = self._create_provider(config)
-            self._providers[cache_key] = provider
+            if cache_key not in self._providers:
+                _logger.info(
+                    "Creating new provider instance (not in cache)",
+                    metadata={"role": role.value, "cache_key": cache_key},
+                )
+                config = settings.get_llm_config(role.value)
+                _logger.info(
+                    "LLM config resolved",
+                    metadata={
+                        "role": role.value,
+                        "provider": config.get("provider"),
+                        "model": config.get("model"),
+                    },
+                )
+                provider = self._create_provider(config)
+                self._providers[cache_key] = provider
+            else:
+                _logger.debug(
+                    "Returning cached provider",
+                    metadata={"role": role.value, "cache_key": cache_key},
+                )
 
-        return self._providers[cache_key]
+            return self._providers[cache_key]
+        except Exception as e:
+            _logger.exception(
+                "get_client FAILED",
+                metadata={
+                    "role": role.value,
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                },
+            )
+            raise
 
     def get_provider_for_role(self, role: LLMUsageRole) -> LLMProvider:
         """get_clientのエイリアス（より明示的な名前）"""

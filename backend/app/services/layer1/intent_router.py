@@ -134,8 +134,19 @@ class IntentRouter:
         if self._provider is None:
             try:
                 self._provider = llm_manager.get_client(LLMUsageRole.FAST)
-            except Exception:
-                pass
+                logger.info(
+                    "LLM provider acquired",
+                    metadata={"provider_type": type(self._provider).__name__},
+                )
+            except Exception as e:
+                logger.exception(
+                    "Failed to acquire LLM provider (will use keyword fallback)",
+                    metadata={
+                        "error_type": type(e).__name__,
+                        "error": str(e),
+                        "role": LLMUsageRole.FAST.value,
+                    },
+                )
         return self._provider
 
     @staticmethod
