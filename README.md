@@ -236,8 +236,10 @@ npm run dev
 ## 開発ロードマップ
 
 - [x] Phase 1: 最高の「独り言ツール」の構築
-- [ ] Phase 2: 「精製所」の稼働
+- [ ] Phase 2: 「精製所」の稼働（ログ作成時に精製パイプラインをキューする実装済み → [DEVELOPMENT.md](DEVELOPMENT.md)）
 - [ ] Phase 3: 「偶然の結合」の実現
+
+開発の進め方・ローカル起動の詳細は **[DEVELOPMENT.md](DEVELOPMENT.md)** を参照してください。
 
 ## ライセンス
 

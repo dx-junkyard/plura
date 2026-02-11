@@ -2,6 +2,7 @@
 MINDYARD - Log Endpoints
 Layer 1: Private Logger API
 """
+import logging
 from datetime import datetime
 from typing import Optional
 import uuid
@@ -22,7 +23,9 @@ from app.schemas.raw_log import (
     AckResponse,
 )
 from app.services.layer1.context_analyzer import context_analyzer
-from app.workers.tasks import analyze_log_structure
+from app.services.layer1.conversation_agent import conversation_agent
+from app.services.layer1.situation_router import situation_router
+from app.workers.tasks import analyze_log_structure, process_log_for_insight
 from app.core.config import settings
 
 router = APIRouter()
@@ -51,15 +54,29 @@ async def create_log(
     AIは「回答」や「アドバイス」を行わない。
     「聞く」ことに徹し、受容的な相槌（Ack）のみを返す。
     """
-    # ログの作成
+    # ログの作成（続きのときは thread_id を指定）
     log = RawLog(
         user_id=current_user.id,
         content=log_in.content,
         content_type=log_in.content_type,
+        thread_id=log_in.thread_id,
     )
     session.add(log)
     await session.commit()
     await session.refresh(log)
+
+    # 新規スレッドのときは thread_id を自分自身の id にセット
+    if log.thread_id is None:
+        log.thread_id = log.id
+        await session.commit()
+        await session.refresh(log)
+    else:
+        # 続きのとき: 先頭ログ（id == thread_id）の thread_id が未設定ならセット（旧データ互換）
+        if log.thread_id != log.id:
+            head = await session.get(RawLog, log.thread_id)
+            if head is not None and head.thread_id is None:
+                head.thread_id = head.id
+                await session.commit()
 
     # 非同期でContext Analyzerを実行
     # 実際の実装ではCeleryタスクとして実行
@@ -80,13 +97,57 @@ async def create_log(
 
     # 状態共有（STATE）は即時の共感応答のみ返し、構造分析は実行しない
     if log.intent != LogIntent.STATE:
-        # 構造分析タスクを非同期でキック
-        # Celery タスクとしてバックグラウンドで実行
+        # 構造分析タスクを非同期でキック（Layer 2）
         try:
             analyze_log_structure.delay(str(log.id))
         except Exception:
             # タスクキューが利用不可でもログ作成は成功させる
             pass
+
+    # 精製所パイプラインをキック（Layer 2: 匿名化 → 構造化 → 共有価値評価 → InsightCard）
+    try:
+        process_log_for_insight.delay(str(log.id))
+    except Exception:
+        pass
+
+    # 同一スレッド内の直前の構造的課題を取得（Situation Router 用）
+    previous_topic = None
+    if log.thread_id:
+        prev_result = await session.execute(
+            select(RawLog)
+            .where(
+                RawLog.user_id == current_user.id,
+                RawLog.thread_id == log.thread_id,
+                RawLog.id != log.id,
+            )
+            .order_by(desc(RawLog.created_at))
+            .limit(1)
+        )
+        prev_log = prev_result.scalar_one_or_none()
+        if prev_log and prev_log.structural_analysis:
+            previous_topic = (
+                prev_log.structural_analysis.get("updated_structural_issue")
+                or prev_log.structural_analysis.get("structural_issue")
+            )
+
+    # 状況をコードで分類し、会話エージェントに渡す
+    situation = situation_router.classify(log_in.content, previous_topic)
+
+    # 会話ラリー用の自然な返答を生成（スレッド履歴 + 状況）
+    conversation_reply = None
+    try:
+        conversation_reply = await conversation_agent.generate_reply(
+            session, current_user.id, log, situation=situation
+        )
+        if conversation_reply:
+            log.assistant_reply = conversation_reply
+            await session.commit()
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.warning("create_log: conversation_agent failed: %s", e, exc_info=True)
+    if conversation_reply is None:
+        logger = logging.getLogger(__name__)
+        logger.info("create_log: conversation_reply not generated (BALANCED LLM / OPENAI_API_KEY may be missing)")
 
     # 受容的な相槌を返す
     return AckResponse.create_ack(
@@ -94,6 +155,7 @@ async def create_log(
         intent=log.intent,
         emotions=log.emotions,
         content=log.content,
+        conversation_reply=conversation_reply,
     )
 
 
@@ -270,15 +332,20 @@ async def transcribe_audio(
                 detail="音声を認識できませんでした。もう一度お試しください。",
             )
 
-        # ログの作成
+        # ログの作成（音声は新規スレッド）
         log = RawLog(
             user_id=current_user.id,
             content=transcribed_text,
-            content_type="voice",  # 音声入力であることを記録
+            content_type="voice",
+            thread_id=None,
         )
         session.add(log)
         await session.commit()
         await session.refresh(log)
+        if log.thread_id is None:
+            log.thread_id = log.id
+            await session.commit()
+            await session.refresh(log)
 
         # Context Analyzer を実行
         try:
@@ -305,13 +372,32 @@ async def transcribe_audio(
                 # タスクキューが利用不可でもログ作成は成功させる
                 pass
 
-        # 受容的な相槌を返す（音声入力の場合は文字起こしテキストも含める）
+        # 精製所パイプラインをキック
+        try:
+            process_log_for_insight.delay(str(log.id))
+        except Exception:
+            pass
+
+        # 会話ラリー用の自然な返答を生成（音声は状況なしで履歴のみ）
+        conversation_reply = None
+        try:
+            situation = situation_router.classify(transcribed_text, None)
+            conversation_reply = await conversation_agent.generate_reply(
+                session, current_user.id, log, situation=situation
+            )
+            if conversation_reply:
+                log.assistant_reply = conversation_reply
+                await session.commit()
+        except Exception:
+            pass
+
         return AckResponse.create_ack(
             log_id=log.id,
             intent=log.intent,
             emotions=log.emotions,
             content=log.content,
             transcribed_text=transcribed_text,
+            conversation_reply=conversation_reply,
         )
 
     except HTTPException:
