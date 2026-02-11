@@ -108,7 +108,7 @@ export interface SharingProposal {
 }
 
 // Conversation (LangGraph Hypothesis-Driven Routing)
-export type ConversationIntent = 'chat' | 'empathy' | 'knowledge' | 'deep_dive' | 'brainstorm' | 'probe';
+export type ConversationIntent = 'chat' | 'empathy' | 'knowledge' | 'deep_dive' | 'brainstorm' | 'probe' | 'state_share';
 
 export type PreviousEvaluation = 'positive' | 'negative' | 'pivot' | 'none';
 

@@ -10,7 +10,7 @@ import { Send, Mic, MicOff, Loader2, ChevronDown, ChevronUp, Share2, Copy, Check
 import { api } from '@/lib/api';
 import { useRecommendationStore } from '@/lib/store';
 import { cn, formatRelativeTime } from '@/lib/utils';
-import type { AckResponse, RawLog } from '@/types';
+import type { AckResponse, RawLog, ConversationResponse } from '@/types';
 
 interface Message {
   id: string;
@@ -208,6 +208,8 @@ export function ThoughtStream() {
   }, [fetchRecommendations]);
 
   // 送信ハンドラ
+  // LangGraph会話エンジン（/api/v1/conversation/）を経由して送信する。
+  // これによりIntent Router → Knowledge Node → Deep Researchの判定が行われる。
   const handleSubmit = async () => {
     if (!input.trim() || isSubmitting) return;
 
@@ -219,34 +221,41 @@ export function ThoughtStream() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const currentInput = input.trim();
     setInput('');
     setIsSubmitting(true);
     clearRecommendations();
 
     try {
-      const response: AckResponse = await api.createLog(input.trim());
+      // LangGraph会話エンジンを使用（Deep Research判定を含む）
+      const response: ConversationResponse = await api.converse(currentInput);
 
-      if (response.message?.trim()) {
-        const systemMessage: Message = {
-          id: response.log_id,
+      // AIからの応答を表示
+      if (response.response?.trim()) {
+        const aiMessage: Message = {
+          id: `ai-${Date.now()}`,
           type: 'system',
-          content: response.message,
+          content: response.response,
           timestamp: new Date(response.timestamp),
-          logId: response.log_id,
         };
-        setMessages((prev) => [...prev, systemMessage]);
+        setMessages((prev) => [...prev, aiMessage]);
       }
 
-      if (!response.skip_structural_analysis) {
-        // 構造分析のポーリングを開始
-        setPendingLogIds(prev => [...prev, response.log_id]);
-        initializeAnalysisSteps();
+      // バックグラウンドタスクが開始された場合（Deep Research等）
+      if (response.background_task) {
+        const taskMessage: Message = {
+          id: `task-${response.background_task.task_id}`,
+          type: 'system',
+          content: response.background_task.message,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, taskMessage]);
       }
     } catch (error) {
       const errorMessage: Message = {
         id: Date.now().toString(),
         type: 'system',
-        content: '保存に失敗しました。もう一度お試しください。',
+        content: '送信に失敗しました。もう一度お試しください。',
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
