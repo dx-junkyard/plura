@@ -18,8 +18,8 @@ from app.core.config import settings
 # this is the Alembic Config object
 config = context.config
 
-# Set sqlalchemy.url from settings
-config.set_main_option("sqlalchemy.url", settings.database_url.replace("+asyncpg", ""))
+# Set sqlalchemy.url from settings (async で実行するため asyncpg を維持)
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Interpret the config file for Python logging.
 if config.config_file_name is not None:

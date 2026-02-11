@@ -6,7 +6,8 @@
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { Send, Mic, MicOff, Loader2, ChevronDown, ChevronUp, Share2, Copy, Check } from 'lucide-react';
+import Link from 'next/link';
+import { Send, Mic, MicOff, Loader2, ChevronDown, ChevronUp, Copy, Check, Lightbulb, MessageSquarePlus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useRecommendationStore } from '@/lib/store';
 import { cn, formatRelativeTime } from '@/lib/utils';
@@ -14,7 +15,7 @@ import type { AckResponse, RawLog } from '@/types';
 
 interface Message {
   id: string;
-  type: 'user' | 'system' | 'ai-question';
+  type: 'user' | 'system' | 'assistant' | 'ai-question';
   content: string;
   timestamp: Date;
   logId?: string;
@@ -24,6 +25,7 @@ interface Message {
     relationship_reason: string;
     updated_structural_issue: string;
     probing_question: string;
+    model_info?: { tier: string; model: string; is_reasoning: boolean };
   };
   isVoiceInput?: boolean;
 }
@@ -35,9 +37,17 @@ interface AnalysisStep {
   status: 'pending' | 'in_progress' | 'completed';
 }
 
-export function ThoughtStream() {
+interface ThoughtStreamProps {
+  selectedLogId?: string | null;
+  onClearSelection?: () => void;
+}
+
+export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStreamProps) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
+  /** 続きで送るときに API に渡す thread_id（選択ログの thread_id またはその id） */
+  const [continuingThreadId, setContinuingThreadId] = useState<string | null>(null);
+  const [isLoadingLog, setIsLoadingLog] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -58,6 +68,66 @@ export function ThoughtStream() {
 
   // 分析待ちのログがあるかどうか（UIの表示制御用）
   const isWaitingForAnalysis = pendingLogIds.length > 0;
+
+  // タイムラインで選択されたログを読み込み、チャットを続けられるようにする
+  useEffect(() => {
+    if (!selectedLogId) return;
+
+    const loadLogAsThread = async () => {
+      setIsLoadingLog(true);
+      try {
+        const log: RawLog = await api.getLog(selectedLogId);
+        const thread: Message[] = [];
+
+        // ユーザーの記録
+        thread.push({
+          id: `user-${log.id}`,
+          type: 'user',
+          content: log.content,
+          timestamp: new Date(log.created_at),
+          logId: log.id,
+          isVoiceInput: log.content_type === 'voice',
+        });
+
+        // 会話返答 or 相槌（記録受付）
+        thread.push({
+          id: `ack-${log.id}`,
+          type: log.assistant_reply ? 'assistant' : 'system',
+          content: log.assistant_reply || '受け取りました。',
+          timestamp: new Date(log.created_at),
+          logId: log.id,
+        });
+
+        // 構造分析の深掘り問い（あれば）
+        if (log.structural_analysis?.probing_question) {
+          thread.push({
+            id: `ai-${log.id}`,
+            type: 'ai-question',
+            content: log.structural_analysis.probing_question,
+            timestamp: new Date(log.updated_at),
+            logId: log.id,
+            relationshipType: log.structural_analysis.relationship_type,
+            structuralAnalysis: log.structural_analysis ?? undefined,
+          });
+        }
+
+        setMessages(thread);
+        setContinuingThreadId(log.thread_id ?? log.id);
+      } catch (e) {
+        console.error('Failed to load log for continue:', e);
+        setContinuingThreadId(null);
+      } finally {
+        setIsLoadingLog(false);
+      }
+    };
+
+    loadLogAsThread();
+  }, [selectedLogId]);
+
+  // 選択が外れたらスレッド id をクリア
+  useEffect(() => {
+    if (!selectedLogId) setContinuingThreadId(null);
+  }, [selectedLogId]);
 
   // メッセージ追加時にスクロール
   useEffect(() => {
@@ -224,18 +294,23 @@ export function ThoughtStream() {
     clearRecommendations();
 
     try {
-      const response: AckResponse = await api.createLog(input.trim());
+      const response: AckResponse = await api.createLog(
+        input.trim(),
+        'text',
+        continuingThreadId ?? undefined
+      );
 
-      if (response.message?.trim()) {
-        const systemMessage: Message = {
-          id: response.log_id,
-          type: 'system',
-          content: response.message,
-          timestamp: new Date(response.timestamp),
-          logId: response.log_id,
-        };
-        setMessages((prev) => [...prev, systemMessage]);
-      }
+      const replyContent = response.conversation_reply || response.message;
+      const replyType: Message['type'] = response.conversation_reply ? 'assistant' : 'system';
+      const replyMessage: Message = {
+        id: response.log_id,
+        type: replyType,
+        content: replyContent,
+        timestamp: new Date(), // 送信直後の返答は常に「今」で表示（サーバ時刻のずれを防ぐ）
+        logId: response.log_id,
+      };
+
+      setMessages((prev) => [...prev, replyMessage]);
 
       if (!response.skip_structural_analysis) {
         // 構造分析のポーリングを開始
@@ -395,18 +470,17 @@ MINDYARD で思考を整理しました`;
           isVoiceInput: true,
         };
 
-        // システムからの相槌
-        const systemMessage: Message = {
+        const replyContent = response.conversation_reply || response.message;
+        const replyType: Message['type'] = response.conversation_reply ? 'assistant' : 'system';
+        const replyMessage: Message = {
           id: response.log_id,
-          type: 'system',
-          content: response.message,
+          type: replyType,
+          content: replyContent,
           timestamp: new Date(response.timestamp),
           logId: response.log_id,
         };
 
-        return response.message?.trim()
-          ? [...filtered, userMessage, systemMessage]
-          : [...filtered, userMessage];
+        return [...filtered, userMessage, replyMessage];
       });
 
       if (!response.skip_structural_analysis) {
@@ -437,23 +511,55 @@ MINDYARD で思考を整理しました`;
     <div className="flex flex-col h-full">
       {/* メッセージエリア */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400">
-            <p className="text-lg font-medium mb-2">思いついたことを書いてみましょう</p>
-            <p className="text-sm">ここは安全な場所です。何でも記録できます。</p>
+        {selectedLogId && (
+          <div className="flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-primary-50 border border-primary-100 text-sm text-primary-800">
+            <span>この会話の続きを話せます</span>
+            <button
+              type="button"
+              onClick={() => {
+                setMessages([]);
+                onClearSelection?.();
+              }}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-primary-100 text-primary-700 font-medium transition-colors"
+            >
+              <MessageSquarePlus className="w-4 h-4" />
+              新しい会話を始める
+            </button>
           </div>
         )}
 
-        {messages.map((message) => (
+        {isLoadingLog && (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+          </div>
+        )}
+
+        {!isLoadingLog && messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full text-gray-400 px-4">
+            <p className="text-lg font-medium mb-2">何でも話しかけてみてください</p>
+            <p className="text-sm text-center mb-4">聞き上手なAIが相手です。思いついたことを自由に。</p>
+            <p className="text-xs text-center text-gray-400 max-w-sm">
+              浮かび上がった課題と解決の方向性は、一般化されて
+              <Link href="/insights" className="text-primary-500 hover:text-primary-600 inline-flex items-center gap-0.5 mx-0.5">
+                <Lightbulb className="w-3.5 h-3.5" /> みんなの知恵
+              </Link>
+              に共有できる形で整理されます。
+            </p>
+          </div>
+        )}
+
+        {!isLoadingLog && messages.map((message) => (
           <div
             key={message.id}
             className={cn(
-              'max-w-[80%] rounded-lg p-3',
+              'rounded-lg p-3',
               message.type === 'user'
-                ? 'ml-auto bg-private-100 text-gray-800'
+                ? 'ml-auto max-w-[80%] bg-private-100 text-gray-800'
+                : message.type === 'assistant'
+                ? 'mr-auto max-w-[80%] bg-emerald-50 border border-emerald-100 text-gray-800'
                 : message.type === 'ai-question'
-                ? 'mr-auto bg-blue-50 border border-blue-200 text-gray-700'
-                : 'mr-auto bg-gray-100 text-gray-600'
+                ? 'mr-auto max-w-[85%] bg-gray-50 border border-gray-200 text-gray-500 text-sm'
+                : 'mr-auto max-w-[80%] bg-gray-100 text-gray-600'
             )}
           >
             {message.type === 'user' && message.isVoiceInput && (
@@ -462,20 +568,20 @@ MINDYARD で思考を整理しました`;
               </span>
             )}
             {message.type === 'ai-question' && (
-              <div className="flex items-start justify-between mb-2">
-                <span className="text-xs text-blue-500 font-medium">
-                  🤔 考えを深める問い
+              <div className="flex items-start justify-between mb-1">
+                <span className="text-xs text-gray-400 font-medium">
+                  思考の整理
                 </span>
                 {message.structuralAnalysis && (
                   <button
                     onClick={() => copyAnalysisResult(message)}
-                    className="text-blue-400 hover:text-blue-600 transition-colors p-1 -m-1"
+                    className="text-gray-400 hover:text-gray-600 transition-colors p-1 -m-1"
                     title="整理結果をコピー"
                   >
                     {copiedMessageId === message.id ? (
-                      <Check className="w-4 h-4 text-green-500" />
+                      <Check className="w-3.5 h-3.5 text-green-500" />
                     ) : (
-                      <Copy className="w-4 h-4" />
+                      <Copy className="w-3.5 h-3.5" />
                     )}
                   </button>
                 )}
@@ -483,28 +589,24 @@ MINDYARD で思考を整理しました`;
             )}
             <p className="whitespace-pre-wrap">{message.content}</p>
             {message.type === 'ai-question' && message.structuralAnalysis && (
-              <div className="mt-3 pt-3 border-t border-blue-100">
-                <p className="text-xs text-blue-600 font-medium mb-1">構造的な課題:</p>
-                <p className="text-sm text-gray-600 mb-2">{message.structuralAnalysis.updated_structural_issue}</p>
-                <div className="flex flex-wrap gap-2">
-                  <span className="inline-block text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">
-                    {message.structuralAnalysis.relationship_type === 'ADDITIVE' && '深化'}
-                    {message.structuralAnalysis.relationship_type === 'PARALLEL' && '並列'}
-                    {message.structuralAnalysis.relationship_type === 'CORRECTION' && '訂正'}
-                    {message.structuralAnalysis.relationship_type === 'NEW' && '新規'}
-                  </span>
-                  {message.structuralAnalysis.model_info && (
-                    <span className={cn(
-                      "inline-block text-xs px-2 py-0.5 rounded-full",
-                      message.structuralAnalysis.model_info.is_reasoning
-                        ? "bg-purple-100 text-purple-600"
-                        : "bg-gray-100 text-gray-500"
-                    )}>
-                      {message.structuralAnalysis.model_info.is_reasoning ? 'Reasoning' : message.structuralAnalysis.model_info.tier}
+              <details className="mt-2 pt-2 border-t border-gray-200">
+                <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-500">
+                  詳細を見る
+                </summary>
+                <div className="mt-2 space-y-1">
+                  <p className="text-xs text-gray-500">
+                    <span className="font-medium">課題:</span> {message.structuralAnalysis.updated_structural_issue}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    <span className="inline-block text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+                      {message.structuralAnalysis.relationship_type === 'ADDITIVE' && '深化'}
+                      {message.structuralAnalysis.relationship_type === 'PARALLEL' && '並列'}
+                      {message.structuralAnalysis.relationship_type === 'CORRECTION' && '訂正'}
+                      {message.structuralAnalysis.relationship_type === 'NEW' && '新規'}
                     </span>
-                  )}
+                  </div>
                 </div>
-              </div>
+              </details>
             )}
             <span className="text-xs text-gray-400 mt-1 block">
               {formatRelativeTime(message.timestamp.toISOString())}
@@ -565,6 +667,24 @@ MINDYARD で思考を整理しました`;
 
       {/* 入力エリア */}
       <div className="border-t border-gray-200 p-4 bg-white">
+        {/* タイムラインから続けているとき: 新しいチャットに切り替えるボタン（常に見える位置） */}
+        {selectedLogId && (
+          <div className="mb-3 flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-primary-50 border border-primary-100">
+            <span className="text-sm text-primary-800">この会話の続き</span>
+            <button
+              type="button"
+              onClick={() => {
+                setMessages([]);
+                onClearSelection?.();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary-300 bg-white text-primary-700 text-sm font-medium hover:bg-primary-50 transition-colors shadow-sm"
+            >
+              <MessageSquarePlus className="w-4 h-4" />
+              新しいチャットを始める
+            </button>
+          </div>
+        )}
+
         {/* 録音エラー表示 */}
         {recordingError && (
           <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">

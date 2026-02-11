@@ -6,11 +6,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  PenLine,
+  Bot,
   Lightbulb,
-  Calendar,
   Bell,
-  User,
   LogOut
 } from 'lucide-react';
 import { useAuthStore, useNotificationStore } from '@/lib/store';
@@ -30,21 +28,15 @@ export function Navigation() {
   const navItems = [
     {
       href: '/',
-      label: '記録',
-      icon: PenLine,
-      description: 'Layer 1: 思考の私有地',
+      label: 'AIエージェント',
+      icon: Bot,
+      description: '思考を整理し、課題・解決策を「みんなの知恵」に共有',
     },
     {
       href: '/insights',
       label: 'みんなの知恵',
       icon: Lightbulb,
       description: 'Layer 3: 共創の広場',
-    },
-    {
-      href: '/timeline',
-      label: 'タイムライン',
-      icon: Calendar,
-      description: '過去の振り返り',
     },
   ];
 

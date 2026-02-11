@@ -21,7 +21,7 @@ class RawLogBase(BaseModel):
 class RawLogCreate(RawLogBase):
     """ログ作成スキーマ"""
 
-    pass
+    thread_id: Optional[uuid.UUID] = None  # 続きのときはこのスレッドの先頭ログ id
 
 
 class RawLogUpdate(BaseModel):
@@ -35,6 +35,7 @@ class RawLogResponse(RawLogBase):
 
     id: uuid.UUID
     user_id: uuid.UUID
+    thread_id: Optional[uuid.UUID] = None
     intent: Optional[LogIntent] = None
     emotions: Optional[List[str]] = None
     emotion_scores: Optional[dict] = None
@@ -42,6 +43,7 @@ class RawLogResponse(RawLogBase):
     tags: Optional[List[str]] = None
     metadata_analysis: Optional[dict] = None
     structural_analysis: Optional[dict] = None
+    assistant_reply: Optional[str] = None
     is_analyzed: bool
     is_processed_for_insight: bool
     is_structure_analyzed: bool = False
@@ -63,7 +65,7 @@ class RawLogListResponse(BaseModel):
 class AckResponse(BaseModel):
     """
     ノン・ジャッジメンタル応答
-    「聞く」ことに徹した受容的な相槌
+    「聞く」ことに徹した受容的な相槌 + 会話ラリー用の自然言語返答
     """
 
     message: str
@@ -71,6 +73,7 @@ class AckResponse(BaseModel):
     timestamp: datetime
     transcribed_text: Optional[str] = None  # 音声入力時の文字起こしテキスト
     skip_structural_analysis: bool = False
+    conversation_reply: Optional[str] = None  # 会話エージェントが生成した自然な返答（ラリー用）
 
     @classmethod
     def create_ack(
@@ -80,8 +83,10 @@ class AckResponse(BaseModel):
         emotions: Optional[List[str]] = None,
         content: Optional[str] = None,
         transcribed_text: Optional[str] = None,
+        conversation_reply: Optional[str] = None,
     ) -> "AckResponse":
-        """意図に応じた相槌を生成"""
+        """意図に応じた相槌を生成（conversation_reply がある場合はそれを優先表示用に含める）"""
+        # STATE（状態共有）は即時共感のみ、構造分析はスキップ
         if intent == LogIntent.STATE:
             positive_emotions = {"achieved", "excited", "relieved"}
             has_positive_emotion = bool(emotions and any(e in positive_emotions for e in emotions))
@@ -99,6 +104,7 @@ class AckResponse(BaseModel):
                 timestamp=datetime.now(),
                 transcribed_text=transcribed_text,
                 skip_structural_analysis=True,
+                conversation_reply=conversation_reply,
             )
 
         ack_messages = {
@@ -130,4 +136,5 @@ class AckResponse(BaseModel):
             timestamp=datetime.now(),
             transcribed_text=transcribed_text,
             skip_structural_analysis=False,
+            conversation_reply=conversation_reply,
         )
