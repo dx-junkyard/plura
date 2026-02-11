@@ -61,6 +61,10 @@ class ConversationRequest(BaseModel):
         False,
         description="Deep Research の実行をユーザーが承認した場合 True",
     )
+    thread_id: Optional[str] = Field(
+        None,
+        description="会話スレッドID（Deep Research 結果の保存先特定に使用）",
+    )
 
 
 class IntentBadge(BaseModel):
@@ -77,6 +81,10 @@ class BackgroundTask(BaseModel):
     task_type: str
     status: Literal["queued", "running", "completed", "failed"] = "queued"
     message: str = Field(description="ユーザーに表示するメッセージ")
+    result_log_id: Optional[str] = Field(
+        None,
+        description="結果が保存される RawLog の ID（ポーリング用）",
+    )
 
 
 class ConversationResponse(BaseModel):
@@ -92,6 +100,10 @@ class ConversationResponse(BaseModel):
     requires_research_consent: bool = Field(
         default=False,
         description="Deep Research の提案が含まれている場合 True",
+    )
+    is_researching: bool = Field(
+        default=False,
+        description="Deep Research が非同期実行中の場合 True",
     )
 
 

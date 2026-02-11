@@ -190,7 +190,8 @@ class ApiClient {
   async converse(
     inputText: string,
     modeOverride?: ConversationIntent,
-    researchApproved?: boolean
+    researchApproved?: boolean,
+    threadId?: string,
   ): Promise<ConversationResponse> {
     const body: Record<string, unknown> = {
       message: inputText,
@@ -198,6 +199,9 @@ class ApiClient {
     };
     if (researchApproved) {
       body.research_approved = true;
+    }
+    if (threadId) {
+      body.thread_id = threadId;
     }
     const { data } = await this.client.post<ConversationResponse>('/conversation/', body);
     return data;

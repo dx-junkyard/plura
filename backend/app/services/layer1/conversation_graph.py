@@ -64,6 +64,7 @@ class AgentState(TypedDict, total=False):
     # Deep Research フロー
     requires_research_consent: Optional[bool]  # リサーチ提案が必要な場合 True
     research_approved: Optional[bool]          # ユーザーがリサーチを承認した場合 True
+    thread_id: Optional[str]                   # 会話スレッドID
 
 
 # --- Node Functions ---
@@ -361,11 +362,14 @@ async def state_share_node(state: AgentState) -> AgentState:
 
 
 async def deep_research_node(state: AgentState) -> AgentState:
-    """Deep Research Node ラッパー（Gemini API による詳細リサーチ）"""
+    """Deep Research Node ラッパー（Celery 非同期タスクをキック）"""
     result = await _traced_node_wrapper(
         "DeepResearchNode", run_deep_research_node, state
     )
-    return {"response": result["response"]}
+    update: Dict[str, Any] = {"response": result["response"]}
+    if result.get("background_task_info"):
+        update["background_task_info"] = result["background_task_info"]
+    return update
 
 
 # --- Probe Node（仮説検証ノード） ---
@@ -576,6 +580,7 @@ async def run_conversation(
     previous_intent: Optional[str] = None,
     previous_response: Optional[str] = None,
     research_approved: bool = False,
+    thread_id: Optional[str] = None,
 ) -> ConversationResponse:
     """
     会話グラフを実行し、ConversationResponse を返す
@@ -587,6 +592,7 @@ async def run_conversation(
         previous_intent: 前回の意図（仮説検証用）
         previous_response: 前回のAI回答（仮説検証用）
         research_approved: ユーザーが Deep Research を承認した場合 True
+        thread_id: 会話スレッドID（Deep Research の結果保存先）
 
     Returns:
         ConversationResponse（即時回答 + Intent Badge + 非同期タスク情報）
@@ -598,6 +604,7 @@ async def run_conversation(
             "user_id": user_id,
             "mode_override": mode_override,
             "research_approved": research_approved,
+            "thread_id": thread_id,
         },
     )
     conv_start = time.monotonic()
@@ -620,6 +627,7 @@ async def run_conversation(
         # Deep Research フロー
         "requires_research_consent": None,
         "research_approved": research_approved or None,
+        "thread_id": thread_id,
     }
 
     # グラフ実行
@@ -649,7 +657,13 @@ async def run_conversation(
             task_type=bg_info["task_type"],
             status=bg_info["status"],
             message=bg_info["message"],
+            result_log_id=bg_info.get("result_log_id"),
         )
+
+    is_researching = (
+        background_task is not None
+        and bg_info.get("task_type") == "deep_research"
+    )
 
     conv_response = ConversationResponse(
         response=result.get("response", ""),
@@ -657,6 +671,7 @@ async def run_conversation(
         background_task=background_task,
         user_id=user_id,
         requires_research_consent=bool(result.get("requires_research_consent")),
+        is_researching=is_researching,
     )
 
     duration_ms = round((time.monotonic() - conv_start) * 1000, 1)

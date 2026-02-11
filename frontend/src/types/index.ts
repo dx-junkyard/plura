@@ -140,12 +140,14 @@ export interface BackgroundTask {
   task_type: string;
   status: BackgroundTaskStatus;
   message: string;
+  result_log_id?: string; // 結果が保存される RawLog の ID（ポーリング用）
 }
 
 export interface ConversationRequest {
   message: string;
   mode_override?: ConversationIntent;
   research_approved?: boolean; // Deep Research を承認する場合 true
+  thread_id?: string; // 会話スレッドID
 }
 
 export interface ConversationResponse {
@@ -155,6 +157,7 @@ export interface ConversationResponse {
   user_id: string;
   timestamp: string;
   requires_research_consent?: boolean; // Deep Research の提案が含まれている場合 true
+  is_researching?: boolean; // Deep Research が非同期実行中の場合 true
 }
 
 // Recommendations

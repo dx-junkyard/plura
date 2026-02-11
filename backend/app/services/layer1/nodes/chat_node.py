@@ -3,7 +3,7 @@ MINDYARD - Chit-Chat Node
 雑談・カジュアルな会話を処理するノード
 
 気軽で親しみやすいトーンで応答する。
-Deep Research 提案のキーワード判定 + LLM 自動判定を内包する。
+Deep Research の「提案」判定を内包する（実行はしない。提案のみ）。
 """
 from typing import Any, Dict, Optional
 
@@ -26,8 +26,9 @@ You handle casual conversation, but you are always looking for "seeds of thought
 - Use Japanese naturally.
 """
 
-# ─── Deep Research キーワード判定 ───
-# ユーザーの入力にこれらのいずれかが含まれていれば LLM 判定を飛ばして強制 True
+# ─── Deep Research 提案判定 ───
+# これらのキーワードが含まれていたら LLM 判定を飛ばして「提案」を強制 True にする
+# ※ ここで True にしても「提案」するだけ。実行はフロントエンドのボタン押下後。
 _RESEARCH_TRIGGER_KEYWORDS = [
     "調査", "リサーチ", "詳しく", "deep research", "investigate",
     "調べて", "詳細希望", "深掘り", "もっと詳しく", "裏付け",
@@ -35,7 +36,7 @@ _RESEARCH_TRIGGER_KEYWORDS = [
     "ファクトチェック", "research", "もう少し知りたい",
 ]
 
-# LLM に Deep Research を提案すべきか判定させるプロンプト
+# LLM に Deep Research を「提案」すべきか判定させるプロンプト
 _RESEARCH_ASSESSMENT_PROMPT = """以下のユーザーの発言と、それに対するチャットの回答を読んでください。
 回答の後にさらに専門的な調査（論文・統計・最新ニュース・複数ソースの横断調査等）を行えば
 ユーザーにとってプラスになるかどうかを判定してください。
@@ -55,15 +56,24 @@ JSON で返してください:
 
 
 def _has_research_trigger_keyword(text: str) -> bool:
-    """ユーザー入力にリサーチ強制トリガーキーワードが含まれるか"""
+    """ユーザー入力にリサーチ提案トリガーキーワードが含まれるか"""
     text_lower = text.lower()
     return any(kw in text_lower for kw in _RESEARCH_TRIGGER_KEYWORDS)
 
 
-async def _assess_research_value_in_chat(
+async def _should_propose_research(
     provider: LLMProvider, input_text: str, response_text: str
 ) -> bool:
-    """LLM でリサーチ提案の要否を判定（chat ノード専用）"""
+    """Deep Research を「提案」すべきか判定する（実行はしない）
+
+    1. キーワードマッチで強制提案
+    2. LLM による自動判定
+    """
+    if _has_research_trigger_keyword(input_text):
+        logger.info("Research proposal: keyword trigger matched",
+                     metadata={"input_preview": input_text[:80]})
+        return True
+
     try:
         result = await provider.generate_json(
             messages=[
@@ -96,7 +106,7 @@ async def run_chat_node(state: Dict[str, Any]) -> Dict[str, Any]:
     雑談ノード: カジュアルな会話に応答
 
     1. LLM で回答を生成
-    2. キーワード判定 → 強制 True / LLM 判定で requires_research_consent を決定
+    2. requires_research_consent を判定して返す（提案のみ、実行はしない）
     """
     input_text = state["input_text"]
     provider = _get_provider()
@@ -117,19 +127,13 @@ async def run_chat_node(state: Dict[str, Any]) -> Dict[str, Any]:
         response_text = result.content
         logger.info("LLM response", metadata={"response_preview": response_text[:100]})
 
-        # --- Deep Research 判定 ---
-        if _has_research_trigger_keyword(input_text):
-            logger.info("Research trigger: keyword match", metadata={"input_preview": input_text[:80]})
-            requires_research = True
-        else:
-            requires_research = await _assess_research_value_in_chat(
-                provider, input_text, response_text
-            )
-            logger.info("Research assessment result", metadata={"requires": requires_research})
+        # --- Deep Research 提案判定（提案のみ。実行はフロントのボタン経由） ---
+        should_propose = await _should_propose_research(provider, input_text, response_text)
+        logger.info("Research proposal result", metadata={"should_propose": should_propose})
 
         return {
             "response": response_text,
-            "requires_research_consent": requires_research,
+            "requires_research_consent": should_propose,
         }
     except Exception as e:
         logger.warning("LLM call failed", metadata={"error": str(e)})

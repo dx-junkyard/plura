@@ -48,6 +48,7 @@ async def converse(
             user_id=str(current_user.id),
             mode_override=request.mode_override.value if request.mode_override else None,
             research_approved=request.research_approved,
+            thread_id=request.thread_id,
         )
         return result
     except Exception as e:

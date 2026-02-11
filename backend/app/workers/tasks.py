@@ -398,6 +398,145 @@ def deep_research_task(self, query: str, user_id: str):
     return run_async(_research())
 
 
+@celery_app.task(bind=True, max_retries=3)
+def run_deep_research_task(
+    self,
+    user_id: str,
+    thread_id: str,
+    query: str,
+    initial_context: str,
+    research_log_id: str,
+):
+    """
+    Deep Research 非同期タスク
+
+    deep_research_node からキックされ、DEEP モデルで詳細調査を行い、
+    結果を RawLog の assistant_reply に保存する。
+
+    Args:
+        user_id: ユーザーID
+        thread_id: 会話スレッドID
+        query: 調査クエリ（ユーザーの元の質問）
+        initial_context: 初回回答（深掘り用コンテキスト）
+        research_log_id: 結果を保存する RawLog の ID（事前生成）
+    """
+    async def _research():
+        await engine.dispose()
+
+        try:
+            logger.info(
+                f"Starting deep research task for user_id: {user_id}, "
+                f"log_id: {research_log_id}, query: {query[:100]}"
+            )
+
+            from app.core.llm import llm_manager
+            from app.core.llm_provider import LLMUsageRole
+
+            provider = llm_manager.get_client(LLMUsageRole.DEEP)
+            await provider.initialize()
+
+            system_prompt = (
+                "あなたはMINDYARDの Deep Research アシスタントです。\n"
+                "ユーザーのクエリに対して、徹底的かつ包括的な調査レポートを作成してください。\n\n"
+                "### 出力制約（厳守）:\n"
+                "- **文字数: 2,000〜3,000文字**に収めること。超過禁止。\n"
+                "- 詳細は**箇条書き（・ や - ）**で簡潔にまとめる。\n"
+                "- Markdownテーブルを使う場合、**各セルは50文字以内**にすること。\n"
+                "- 冗長な前置き・繰り返しを避け、情報密度を高く保つ。\n\n"
+                "### 調査方針:\n"
+                "1. **多角的な視点**: 複数の観点からトピックを分析する\n"
+                "2. **構造化された回答**: 見出し・箇条書きを使って情報を整理する\n"
+                "3. **エビデンスベース**: 主張には根拠や出典の方向性を示す\n"
+                "4. **実用性重視**: ユーザーが次のアクションを取れる具体的情報\n\n"
+                "### 出力フォーマット:\n"
+                "- 概要（1-2文のサマリー）\n"
+                "- 主要な発見・知見（箇条書き）\n"
+                "- 詳細分析（各ポイントの掘り下げ）\n"
+                "- 次のステップの提案\n\n"
+                "### 注意事項:\n"
+                "- 日本語で応答する\n"
+                "- 確証のない情報は「〜の可能性があります」等と明記する\n"
+                "- 専門用語には簡潔な説明を付ける\n"
+            )
+
+            research_query = query
+            if initial_context:
+                research_query = (
+                    f"元の質問: {query}\n\n"
+                    f"初回の回答（これを深掘りしてください）:\n{initial_context}"
+                )
+
+            result = await provider.generate_text(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": research_query},
+                ],
+                temperature=0.3,
+            )
+
+            research_report = result.content
+            logger.info(
+                f"Deep research completed for log_id: {research_log_id}, "
+                f"length: {len(research_report)}"
+            )
+
+            # 結果を RawLog に保存
+            async with async_session_maker() as session:
+                log = RawLog(
+                    id=uuid.UUID(research_log_id),
+                    user_id=uuid.UUID(user_id),
+                    thread_id=uuid.UUID(thread_id) if thread_id else None,
+                    content=query,
+                    content_type="deep_research",
+                    assistant_reply=f"🔬 **Deep Research 結果**\n\n{research_report}",
+                    is_analyzed=True,
+                    is_structure_analyzed=True,
+                    is_processed_for_insight=False,
+                )
+                session.add(log)
+                await session.commit()
+                logger.info(f"Deep research result saved to log_id: {research_log_id}")
+
+            return {
+                "status": "success",
+                "log_id": research_log_id,
+                "user_id": user_id,
+                "report_length": len(research_report),
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error in run_deep_research_task for log_id {research_log_id}: {str(e)}",
+                exc_info=True,
+            )
+            # エラーでも結果を保存（ユーザーに通知するため）
+            try:
+                async with async_session_maker() as session:
+                    log = RawLog(
+                        id=uuid.UUID(research_log_id),
+                        user_id=uuid.UUID(user_id),
+                        thread_id=uuid.UUID(thread_id) if thread_id else None,
+                        content=query,
+                        content_type="deep_research",
+                        assistant_reply=(
+                            "Deep Research の実行中にエラーが発生しました。\n"
+                            "再度お試しいただくこともできます。"
+                        ),
+                        is_analyzed=True,
+                        is_structure_analyzed=True,
+                    )
+                    session.add(log)
+                    await session.commit()
+            except Exception:
+                logger.error(
+                    f"Failed to save error log for {research_log_id}",
+                    exc_info=True,
+                )
+            return {"status": "error", "message": str(e)}
+
+    return run_async(_research())
+
+
 @celery_app.task
 def process_all_unprocessed_logs():
     """

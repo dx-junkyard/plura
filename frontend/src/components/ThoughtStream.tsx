@@ -52,6 +52,8 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
   const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [isResearching, setIsResearching] = useState(false);
+  const [researchLogId, setResearchLogId] = useState<string | null>(null);
+  const researchPollingRef = useRef<NodeJS.Timeout>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const debounceRef = useRef<NodeJS.Timeout>();
@@ -379,7 +381,47 @@ MINDYARD で思考を整理しました`;
     }
   }, []);
 
-  // Deep Research 実行ハンドラ
+  // Deep Research ポーリング: result_log_id の assistant_reply を監視
+  useEffect(() => {
+    if (!researchLogId) return;
+
+    const pollForResearchResult = async () => {
+      try {
+        const log = await api.getLog(researchLogId);
+        if (log.assistant_reply) {
+          // 結果が到着 — 「調査中...」を除去して結果を表示
+          const resultMessage: ChatMessage = {
+            id: `research-result-${researchLogId}`,
+            type: 'assistant',
+            content: log.assistant_reply,
+            timestamp: new Date().toISOString(),
+          };
+          const currentMsgs = useConversationStore.getState().messages;
+          setMessages([
+            ...currentMsgs.filter((m) => !m.id.startsWith('researching-')),
+            resultMessage,
+          ]);
+          setIsResearching(false);
+          setResearchLogId(null);
+        }
+      } catch {
+        // 404 等は無視（ログがまだ作成されていない）
+      }
+    };
+
+    // 初回実行
+    pollForResearchResult();
+    // 3秒間隔でポーリング
+    researchPollingRef.current = setInterval(pollForResearchResult, 3000);
+
+    return () => {
+      if (researchPollingRef.current) {
+        clearInterval(researchPollingRef.current);
+      }
+    };
+  }, [researchLogId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Deep Research 実行ハンドラ（非同期: Celery タスクをキックし、ポーリングで結果を取得）
   const handleDeepResearch = useCallback(async (message: ChatMessage) => {
     if (isResearching) return;
 
@@ -396,25 +438,34 @@ MINDYARD で思考を整理しました`;
 
     try {
       // 元のメッセージの内容を使って Deep Research を実行
-      // message.logId に紐づくユーザー入力を見つける
       const userMsg = messages.find(
         (m) => m.logId === message.logId && m.type === 'user'
       );
       const queryText = userMsg?.content || message.content;
 
-      const result = await api.converse(queryText, undefined, true);
+      const result = await api.converse(
+        queryText,
+        undefined,
+        true,
+        continuingThreadId ?? undefined,
+      );
 
-      // 「調査中...」メッセージを除去してリサーチ結果を追加
-      const researchResultMessage: ChatMessage = {
-        id: `research-result-${Date.now()}`,
-        type: 'assistant',
+      // バックグラウンドタスクの result_log_id でポーリング開始
+      if (result.background_task?.result_log_id) {
+        setResearchLogId(result.background_task.result_log_id);
+      }
+
+      // 即時レスポンスを表示（「調査を開始しました」等）
+      const ackMessage: ChatMessage = {
+        id: `research-ack-${Date.now()}`,
+        type: 'system',
         content: result.response,
         timestamp: new Date().toISOString(),
       };
-
+      const currentMsgs = useConversationStore.getState().messages;
       setMessages([
-        ...messages.filter((m) => !m.id.startsWith('researching-')),
-        researchResultMessage,
+        ...currentMsgs.filter((m) => !m.id.startsWith('researching-')),
+        ackMessage,
       ]);
     } catch (error) {
       console.error('Deep Research エラー:', error);
@@ -424,14 +475,14 @@ MINDYARD で思考を整理しました`;
         content: 'Deep Research の実行に失敗しました。もう一度お試しください。',
         timestamp: new Date().toISOString(),
       };
+      const currentMsgs = useConversationStore.getState().messages;
       setMessages([
-        ...messages.filter((m) => !m.id.startsWith('researching-')),
+        ...currentMsgs.filter((m) => !m.id.startsWith('researching-')),
         errorMsg,
       ]);
-    } finally {
       setIsResearching(false);
     }
-  }, [isResearching, messages, addMessage, setMessages]);
+  }, [isResearching, messages, addMessage, setMessages, continuingThreadId]);
 
   // キーボードショートカット
   const handleKeyDown = (e: React.KeyboardEvent) => {
