@@ -222,24 +222,21 @@ _RESEARCH_TRIGGER_KEYWORDS = [
 ]
 
 _RESEARCH_ASSESSMENT_PROMPT = """以下のユーザーの質問と、それに対する回答を読んでください。
-この回答の後に「さらに深いリサーチ（論文検索、最新データ収集、複数情報源の横断調査等）」を行うことで、
-ユーザーにとってより大きな価値が得られるかどうかを判定してください。
+回答の後にさらに専門的な調査（論文・統計・最新ニュース・複数ソースの横断調査等）を行えば
+ユーザーにとってプラスになるかどうかを判定してください。
 
-重要: 迷った場合は true を返してください。ユーザーにとって「提案して損はない」場面では積極的に true にしてください。
+★最重要ルール: 少しでも専門的な調査の余地がある場合は必ず true を返してください。
+  迷ったら true です。false にしてよいのは「完全に雑談だけ」の場合のみです。
 
-判定基準（以下のいずれかに該当すれば true）:
-- 最新のデータや統計、専門的な文献があればより良い回答になる → true
-- 回答に「〜と考えられています」「詳細は不明ですが」「一般的には」等の不確実な表現がある → true
-- 複数の情報源を横断的に調べることで、より包括的な視点を提供できる → true
-- トピックが社会・技術・ビジネス・科学に関連し、外部データが価値を追加できる → true
-- ユーザーの質問が知識・事実・解決策を求めている → true
-- 単なる挨拶・相槌・日常的な感情表現のみ → false
+判定基準（1つでも当てはまれば true）:
+- トピックに事実・数値・比較・歴史的背景・最新動向が関係しうる → true
+- 回答に「〜と言われています」「一般的には」「おそらく」等の曖昧表現がある → true
+- ユーザーが何かを学びたい・解決したい・確認したい意図を持っている → true
+- 社会・技術・ビジネス・科学・健康・法律に少しでも関連する → true
+- 単純な挨拶（おはよう等）や感情の吐露のみで事実情報が不要 → false
 
-必ず以下のJSON形式で応答してください:
-{
-    "should_propose_research": true | false,
-    "reason": "判定理由（日本語・1文）"
-}"""
+JSON で返してください:
+{"should_propose_research": true, "reason": "..."}"""
 
 
 def _has_research_trigger_keyword(text: str) -> bool:
@@ -307,8 +304,11 @@ async def chat_node(state: AgentState) -> AgentState:
     """Chit-Chat Node ラッパー"""
     result = await _traced_node_wrapper("ChatNode", run_chat_node, state)
     response = _append_fallback_hint(result["response"], state.get("alternative_intent"))
-    # Deep Research 判定（chat は基本的に不要だが、知的な話題では提案する）
-    requires_consent = await _assess_research_value(state.get("input_text", ""), response)
+    # chat_node 内部で判定済みの requires_research_consent を優先使用
+    requires_consent = result.get("requires_research_consent", False)
+    if not requires_consent:
+        # ノード内部で判定できなかった場合のフォールバック（グラフ側判定）
+        requires_consent = await _assess_research_value(state.get("input_text", ""), response)
     if requires_consent:
         response += _RESEARCH_PROPOSAL_SUFFIX
     return {"response": response, "requires_research_consent": requires_consent}
