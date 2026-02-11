@@ -9,26 +9,10 @@ import TextareaAutosize from 'react-textarea-autosize';
 import Link from 'next/link';
 import { Send, Mic, MicOff, Loader2, ChevronDown, ChevronUp, Copy, Check, Lightbulb, MessageSquarePlus } from 'lucide-react';
 import { api } from '@/lib/api';
-import { useRecommendationStore } from '@/lib/store';
+import { useRecommendationStore, useConversationStore, rawLogToMessages } from '@/lib/store';
+import type { ChatMessage } from '@/lib/store';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import type { AckResponse, RawLog } from '@/types';
-
-interface Message {
-  id: string;
-  type: 'user' | 'system' | 'assistant' | 'ai-question';
-  content: string;
-  timestamp: Date;
-  logId?: string;
-  relationshipType?: string;
-  structuralAnalysis?: {
-    relationship_type: string;
-    relationship_reason: string;
-    updated_structural_issue: string;
-    probing_question: string;
-    model_info?: { tier: string; model: string; is_reasoning: boolean };
-  };
-  isVoiceInput?: boolean;
-}
 
 // 整理プロセスのステップ定義
 interface AnalysisStep {
@@ -44,9 +28,20 @@ interface ThoughtStreamProps {
 
 export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStreamProps) {
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
-  /** 続きで送るときに API に渡す thread_id（選択ログの thread_id またはその id） */
-  const [continuingThreadId, setContinuingThreadId] = useState<string | null>(null);
+
+  // ── 会話メッセージ & スレッド管理は Zustand ストア（localStorage 永続化） ──
+  const {
+    messages,
+    continuingThreadId,
+    isHistoryLoaded,
+    addMessage,
+    addMessages,
+    setMessages,
+    setContinuingThreadId,
+    setHistoryLoaded,
+    clearConversation,
+  } = useConversationStore();
+
   const [isLoadingLog, setIsLoadingLog] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -69,50 +64,66 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
   // 分析待ちのログがあるかどうか（UIの表示制御用）
   const isWaitingForAnalysis = pendingLogIds.length > 0;
 
-  // タイムラインで選択されたログを読み込み、チャットを続けられるようにする
+  // ── 初回マウント: バックエンドから会話履歴をロード（ストアが空のとき） ──
+  useEffect(() => {
+    if (isHistoryLoaded || messages.length > 0) return;
+
+    let cancelled = false;
+    const loadHistory = async () => {
+      try {
+        const data = await api.getLogs(1, 50);
+        if (cancelled || data.items.length === 0) {
+          setHistoryLoaded(true);
+          return;
+        }
+
+        // 古い順にソート → メッセージに変換
+        const sorted = [...data.items].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        const restored: ChatMessage[] = [];
+        for (const log of sorted) {
+          restored.push(...rawLogToMessages(log));
+        }
+        if (!cancelled) {
+          setMessages(restored);
+          // 最新ログのスレッドを continuingThreadId にセット
+          const latest = data.items[0]; // getLogs は created_at desc
+          setContinuingThreadId(latest.thread_id ?? latest.id);
+          setHistoryLoaded(true);
+        }
+      } catch (e) {
+        console.error('Failed to load conversation history:', e);
+        if (!cancelled) setHistoryLoaded(true);
+      }
+    };
+    loadHistory();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // タイムラインで選択されたログを読み込み、そのスレッド全体をチャットに展開する
   useEffect(() => {
     if (!selectedLogId) return;
 
-    const loadLogAsThread = async () => {
+    const loadThreadLogs = async () => {
       setIsLoadingLog(true);
       try {
         const log: RawLog = await api.getLog(selectedLogId);
-        const thread: Message[] = [];
+        const threadId = log.thread_id ?? log.id;
 
-        // ユーザーの記録
-        thread.push({
-          id: `user-${log.id}`,
-          type: 'user',
-          content: log.content,
-          timestamp: new Date(log.created_at),
-          logId: log.id,
-          isVoiceInput: log.content_type === 'voice',
-        });
+        // スレッドに属する全ログを取得（getLogs から thread_id でフィルタ）
+        const allData = await api.getLogs(1, 100);
+        const threadLogs = allData.items
+          .filter((l) => (l.thread_id ?? l.id) === threadId)
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-        // 会話返答 or 相槌（記録受付）
-        thread.push({
-          id: `ack-${log.id}`,
-          type: log.assistant_reply ? 'assistant' : 'system',
-          content: log.assistant_reply || '受け取りました。',
-          timestamp: new Date(log.created_at),
-          logId: log.id,
-        });
-
-        // 構造分析の深掘り問い（あれば）
-        if (log.structural_analysis?.probing_question) {
-          thread.push({
-            id: `ai-${log.id}`,
-            type: 'ai-question',
-            content: log.structural_analysis.probing_question,
-            timestamp: new Date(log.updated_at),
-            logId: log.id,
-            relationshipType: log.structural_analysis.relationship_type,
-            structuralAnalysis: log.structural_analysis ?? undefined,
-          });
+        const thread: ChatMessage[] = [];
+        for (const tl of threadLogs) {
+          thread.push(...rawLogToMessages(tl));
         }
 
         setMessages(thread);
-        setContinuingThreadId(log.thread_id ?? log.id);
+        setContinuingThreadId(threadId);
       } catch (e) {
         console.error('Failed to load log for continue:', e);
         setContinuingThreadId(null);
@@ -121,13 +132,13 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
       }
     };
 
-    loadLogAsThread();
-  }, [selectedLogId]);
+    loadThreadLogs();
+  }, [selectedLogId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 選択が外れたらスレッド id をクリア
+  // 選択が外れたらスレッド id をクリア（メッセージはそのまま残す）
   useEffect(() => {
     if (!selectedLogId) setContinuingThreadId(null);
-  }, [selectedLogId]);
+  }, [selectedLogId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // メッセージ追加時にスクロール
   useEffect(() => {
@@ -156,7 +167,7 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
 
       try {
         const completedIds: string[] = [];
-        const newMessages: Message[] = [];
+        const newMessages: ChatMessage[] = [];
         const latestPendingId = pendingLogIds[pendingLogIds.length - 1];
 
         for (const logId of pendingLogIds) {
@@ -196,11 +207,11 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
               }
 
               // 分析完了 - AIの問いかけをメッセージに追加
-              const aiMessage: Message = {
+              const aiMessage: ChatMessage = {
                 id: `ai-${log.id}`,
                 type: 'ai-question',
                 content: log.structural_analysis.probing_question,
-                timestamp: new Date(),
+                timestamp: new Date().toISOString(),
                 logId: log.id,
                 relationshipType: log.structural_analysis.relationship_type,
                 structuralAnalysis: log.structural_analysis,
@@ -217,7 +228,7 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
         }
 
         if (newMessages.length > 0) {
-          setMessages((prev) => [...prev, ...newMessages]);
+          addMessages(newMessages);
         }
 
         if (completedIds.length > 0) {
@@ -281,14 +292,14 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
   const handleSubmit = async () => {
     if (!input.trim() || isSubmitting) return;
 
-    const userMessage: Message = {
+    const userMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
       content: input.trim(),
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    addMessage(userMessage);
     setInput('');
     setIsSubmitting(true);
     clearRecommendations();
@@ -301,16 +312,16 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
       );
 
       const replyContent = response.conversation_reply || response.message;
-      const replyType: Message['type'] = response.conversation_reply ? 'assistant' : 'system';
-      const replyMessage: Message = {
+      const replyType: ChatMessage['type'] = response.conversation_reply ? 'assistant' : 'system';
+      const replyMessage: ChatMessage = {
         id: response.log_id,
         type: replyType,
         content: replyContent,
-        timestamp: new Date(), // 送信直後の返答は常に「今」で表示（サーバ時刻のずれを防ぐ）
+        timestamp: new Date().toISOString(),
         logId: response.log_id,
       };
 
-      setMessages((prev) => [...prev, replyMessage]);
+      addMessage(replyMessage);
 
       if (!response.skip_structural_analysis) {
         // 構造分析のポーリングを開始
@@ -318,13 +329,13 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
         initializeAnalysisSteps();
       }
     } catch (error) {
-      const errorMessage: Message = {
+      const errorMessage: ChatMessage = {
         id: Date.now().toString(),
         type: 'system',
         content: '保存に失敗しました。もう一度お試しください。',
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, errorMessage]);
+      addMessage(errorMessage);
     } finally {
       setIsSubmitting(false);
       inputRef.current?.focus();
@@ -332,7 +343,7 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
   };
 
   // 整理結果を共有用テキストとしてコピー
-  const copyAnalysisResult = useCallback(async (message: Message) => {
+  const copyAnalysisResult = useCallback(async (message: ChatMessage) => {
     if (!message.structuralAnalysis) return;
 
     const { relationship_type, updated_structural_issue, probing_question } = message.structuralAnalysis;
@@ -445,43 +456,43 @@ MINDYARD で思考を整理しました`;
     setIsTranscribing(true);
 
     // 「音声を送信中」のシステムメッセージを表示
-    const transcribingMessage: Message = {
+    const transcribingMessage: ChatMessage = {
       id: `transcribing-${Date.now()}`,
       type: 'system',
       content: '🎤 音声を解析中...',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     };
-    setMessages((prev) => [...prev, transcribingMessage]);
+    addMessage(transcribingMessage);
 
     try {
       const response: AckResponse = await api.transcribeAudio(audioBlob);
 
       // 「解析中」メッセージを削除し、結果を表示
-      setMessages((prev) => {
-        const filtered = prev.filter((m) => !m.id.startsWith('transcribing-'));
+      const userMsg: ChatMessage = {
+        id: `voice-${response.log_id}`,
+        type: 'user',
+        content: response.transcribed_text || '(音声入力)',
+        timestamp: response.timestamp,
+        logId: response.log_id,
+        isVoiceInput: true,
+      };
 
-        // ユーザーメッセージ（音声から変換されたテキスト）
-        const userMessage: Message = {
-          id: `voice-${response.log_id}`,
-          type: 'user',
-          content: response.transcribed_text || '(音声入力)',
-          timestamp: new Date(response.timestamp),
-          logId: response.log_id,
-          isVoiceInput: true,
-        };
+      const replyContent = response.conversation_reply || response.message;
+      const replyType: ChatMessage['type'] = response.conversation_reply ? 'assistant' : 'system';
+      const replyMsg: ChatMessage = {
+        id: response.log_id,
+        type: replyType,
+        content: replyContent,
+        timestamp: response.timestamp,
+        logId: response.log_id,
+      };
 
-        const replyContent = response.conversation_reply || response.message;
-        const replyType: Message['type'] = response.conversation_reply ? 'assistant' : 'system';
-        const replyMessage: Message = {
-          id: response.log_id,
-          type: replyType,
-          content: replyContent,
-          timestamp: new Date(response.timestamp),
-          logId: response.log_id,
-        };
-
-        return [...filtered, userMessage, replyMessage];
-      });
+      // transcribing メッセージを除いてから結果を追加
+      setMessages([
+        ...messages.filter((m) => !m.id.startsWith('transcribing-')),
+        userMsg,
+        replyMsg,
+      ]);
 
       if (!response.skip_structural_analysis) {
         // 構造分析のポーリングを開始
@@ -492,16 +503,16 @@ MINDYARD で思考を整理しました`;
       console.error('音声送信エラー:', error);
 
       // エラーメッセージを表示
-      setMessages((prev) => {
-        const filtered = prev.filter((m) => !m.id.startsWith('transcribing-'));
-        const errorMessage: Message = {
-          id: Date.now().toString(),
-          type: 'system',
-          content: '音声の処理に失敗しました。もう一度お試しください。',
-          timestamp: new Date(),
-        };
-        return [...filtered, errorMessage];
-      });
+      const errorMsg: ChatMessage = {
+        id: Date.now().toString(),
+        type: 'system',
+        content: '音声の処理に失敗しました。もう一度お試しください。',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages([
+        ...messages.filter((m) => !m.id.startsWith('transcribing-')),
+        errorMsg,
+      ]);
     } finally {
       setIsTranscribing(false);
     }
@@ -517,7 +528,7 @@ MINDYARD で思考を整理しました`;
             <button
               type="button"
               onClick={() => {
-                setMessages([]);
+                clearConversation();
                 onClearSelection?.();
               }}
               className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-primary-100 text-primary-700 font-medium transition-colors"
@@ -609,7 +620,7 @@ MINDYARD で思考を整理しました`;
               </details>
             )}
             <span className="text-xs text-gray-400 mt-1 block">
-              {formatRelativeTime(message.timestamp.toISOString())}
+              {formatRelativeTime(message.timestamp)}
             </span>
           </div>
         ))}
@@ -674,7 +685,7 @@ MINDYARD で思考を整理しました`;
             <button
               type="button"
               onClick={() => {
-                setMessages([]);
+                clearConversation();
                 onClearSelection?.();
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary-300 bg-white text-primary-700 text-sm font-medium hover:bg-primary-50 transition-colors shadow-sm"
