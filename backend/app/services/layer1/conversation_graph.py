@@ -3,11 +3,16 @@ MINDYARD - Conversation Graph (LangGraph)
 仮説駆動型動的ルーティングによる会話グラフ
 
 グラフ構造:
-    Input → Router → [chat | empathy | knowledge | deep_dive | brainstorm | probe] → END
+    Input → Router → [chat | empathy | knowledge | deep_dive |
+                      brainstorm | probe | state_share | research_trigger] → END
 
 Router は仮説駆動型でユーザー入力の意図を分類し、適切なNodeへルーティングする。
 確信度が低い場合はProbeノードで意図を確認する探りレスポンスを生成する。
 mode_override が指定されている場合、Routerの判定を上書きする（Mode Switcher機能）。
+
+対話型ディープ・リサーチ・プロトコル:
+    探索的な問い → knowledge_node（内部知識検索 + 調査提案）
+    ユーザー承認 → research_trigger_node（Celeryタスク発火）
 """
 import time
 from typing import Any, Dict, List, Optional
@@ -34,7 +39,9 @@ from app.services.layer1.nodes import (
     run_deep_dive_node,
     run_brainstorm_node,
     run_state_node,
+    run_research_trigger_node,
 )
+from app.services.layer1.nodes.research_trigger_node import is_research_approval
 
 logger = get_traced_logger("Graph")
 
@@ -60,6 +67,10 @@ class AgentState(TypedDict, total=False):
     previous_evaluation: Optional[str]   # 前回インタラクションの評価
     reasoning: Optional[str]             # ルーターの判断根拠
     alternative_intent: Optional[str]    # 僅差だった場合の第2候補（補足ヒント用）
+    # 対話型ディープ・リサーチ・プロトコル
+    pending_research_query: Optional[str]  # 提案中の調査クエリ
+    research_offered: bool                 # 調査を提案済みかどうか
+    requires_deep_research: bool           # ルーターが探索的な問いと判断したフラグ
 
 
 # --- Node Functions ---
@@ -69,12 +80,30 @@ async def router_node(state: AgentState) -> AgentState:
     Hypothesis-Driven Router Node (Action with Fallback Option)
 
     判定ロジック:
+    0. research_offered == True かつユーザーが肯定的返答 → research_trigger へ
     1. mode_override → 強制上書き（Mode Switcher機能）
     2. primary_confidence < 0.3 → Probe（本当に自信がない場合のみ聞き返す）
     3. primary - secondary < 0.1 → 1位を採用しつつ alternative_intent を設定
        → 各Nodeが回答末尾に「もし〇〇のつもりなら〜」の補足を付与
     4. それ以外 → 1位をそのまま採用
     """
+    # 0. ディープ・リサーチの承認チェック
+    # 前回のターンで research_offered=True の場合、ユーザーの返答が承認かどうか判定
+    if state.get("research_offered") and state.get("pending_research_query"):
+        input_text = state.get("input_text", "")
+        if is_research_approval(input_text):
+            logger.info(
+                "Router: research approval detected, routing to research_trigger",
+                metadata={"pending_query_preview": state["pending_research_query"][:80]},
+            )
+            return {
+                "intent": "research_trigger",
+                "confidence": 1.0,
+            }
+        else:
+            # 承認しなかった場合はリサーチ状態をクリアして通常フローへ
+            logger.info("Router: research not approved, clearing research state")
+
     mode_override = state.get("mode_override")
 
     if mode_override:
@@ -90,6 +119,8 @@ async def router_node(state: AgentState) -> AgentState:
         return {
             "intent": intent.value,
             "confidence": 1.0,
+            "research_offered": False,
+            "pending_research_query": None,
         }
 
     # 前回のコンテキストを構築
@@ -114,6 +145,7 @@ async def router_node(state: AgentState) -> AgentState:
     secondary_intent = classification["secondary_intent"]
     prev_eval = classification.get("previous_evaluation", PreviousEvaluation.NONE)
     reasoning = classification.get("reasoning", "")
+    requires_deep_research = classification.get("requires_deep_research", False)
 
     # 1. 本当に自信がない場合のみProbe
     if primary_conf < 0.3:
@@ -144,6 +176,7 @@ async def router_node(state: AgentState) -> AgentState:
             "intent": primary_intent.value,
             "confidence": primary_conf,
             "alternative_intent": alternative_intent,
+            "requires_deep_research": requires_deep_research,
         },
     )
 
@@ -153,6 +186,7 @@ async def router_node(state: AgentState) -> AgentState:
         "alternative_intent": alternative_intent,
         "previous_evaluation": prev_eval.value,
         "reasoning": reasoning,
+        "requires_deep_research": requires_deep_research,
     }
 
 
@@ -223,12 +257,16 @@ async def empathy_node(state: AgentState) -> AgentState:
 
 
 async def knowledge_node(state: AgentState) -> AgentState:
-    """Knowledge & Async Trigger Node ラッパー"""
+    """Knowledge & Research Proposal Node ラッパー"""
     result = await _traced_node_wrapper("KnowledgeNode", run_knowledge_node, state)
     response = _append_fallback_hint(result["response"], state.get("alternative_intent"))
     update: Dict[str, Any] = {"response": response}
     if result.get("background_task_info"):
         update["background_task_info"] = result["background_task_info"]
+    # ディープ・リサーチ提案の状態を伝搬
+    if result.get("research_offered"):
+        update["research_offered"] = True
+        update["pending_research_query"] = result.get("pending_research_query")
     return update
 
 
@@ -250,6 +288,21 @@ async def state_share_node(state: AgentState) -> AgentState:
     """State Share Node ラッパー（コンディション記録）"""
     result = await _traced_node_wrapper("StateNode", run_state_node, state)
     return {"response": result["response"]}
+
+
+async def research_trigger_node(state: AgentState) -> AgentState:
+    """Research Trigger Node ラッパー（ディープ・リサーチ承認）"""
+    result = await _traced_node_wrapper(
+        "ResearchTriggerNode", run_research_trigger_node, state,
+    )
+    update: Dict[str, Any] = {
+        "response": result["response"],
+        "research_offered": result.get("research_offered", False),
+        "pending_research_query": result.get("pending_research_query"),
+    }
+    if result.get("background_task_info"):
+        update["background_task_info"] = result["background_task_info"]
+    return update
 
 
 # --- Probe Node（仮説検証ノード） ---
@@ -381,7 +434,10 @@ async def probe_node(state: AgentState) -> AgentState:
 def decide_next_node(state: AgentState) -> str:
     """Router の結果に基づいて次のノードを決定"""
     intent = state.get("intent", "chat")
-    valid_intents = {"chat", "empathy", "knowledge", "deep_dive", "brainstorm", "probe", "state_share"}
+    valid_intents = {
+        "chat", "empathy", "knowledge", "deep_dive",
+        "brainstorm", "probe", "state_share", "research_trigger",
+    }
     if intent not in valid_intents:
         logger.warning(
             "Transitioning to fallback node",
@@ -395,7 +451,15 @@ def decide_next_node(state: AgentState) -> str:
 # --- グラフ構築 ---
 
 def build_app_graph() -> StateGraph:
-    """会話グラフを構築してコンパイル"""
+    """会話グラフを構築してコンパイル
+
+    グラフ構造:
+        Input → Router → [chat | empathy | knowledge | deep_dive |
+                          brainstorm | probe | state_share | research_trigger] → END
+
+    research_trigger は、前回のターンで knowledge_node が調査を提案し、
+    ユーザーが「お願い」等の肯定的返答をした場合にルーティングされる。
+    """
     workflow = StateGraph(AgentState)
 
     # ノード登録
@@ -407,6 +471,7 @@ def build_app_graph() -> StateGraph:
     workflow.add_node("brainstorm", brainstorm_node)
     workflow.add_node("state_share", state_share_node)
     workflow.add_node("probe", probe_node)
+    workflow.add_node("research_trigger", research_trigger_node)
 
     # エントリーポイント
     workflow.set_entry_point("router")
@@ -423,6 +488,7 @@ def build_app_graph() -> StateGraph:
             "brainstorm": "brainstorm",
             "state_share": "state_share",
             "probe": "probe",
+            "research_trigger": "research_trigger",
         },
     )
 
@@ -434,6 +500,7 @@ def build_app_graph() -> StateGraph:
     workflow.add_edge("brainstorm", END)
     workflow.add_edge("state_share", END)
     workflow.add_edge("probe", END)
+    workflow.add_edge("research_trigger", END)
 
     return workflow.compile()
 
@@ -450,6 +517,8 @@ async def run_conversation(
     mode_override: Optional[str] = None,
     previous_intent: Optional[str] = None,
     previous_response: Optional[str] = None,
+    pending_research_query: Optional[str] = None,
+    research_offered: bool = False,
 ) -> ConversationResponse:
     """
     会話グラフを実行し、ConversationResponse を返す
@@ -460,6 +529,8 @@ async def run_conversation(
         mode_override: モード強制上書き（Mode Switcher）
         previous_intent: 前回の意図（仮説検証用）
         previous_response: 前回のAI回答（仮説検証用）
+        pending_research_query: 提案中のリサーチクエリ（前回のターンから引き継ぎ）
+        research_offered: 前回のターンでリサーチを提案済みか
 
     Returns:
         ConversationResponse（即時回答 + Intent Badge + 非同期タスク情報）
@@ -470,6 +541,7 @@ async def run_conversation(
             "input_preview": input_text[:80],
             "user_id": user_id,
             "mode_override": mode_override,
+            "research_offered": research_offered,
         },
     )
     conv_start = time.monotonic()
@@ -489,6 +561,10 @@ async def run_conversation(
         "previous_evaluation": None,
         "reasoning": None,
         "alternative_intent": None,
+        # 対話型ディープ・リサーチ・プロトコル
+        "pending_research_query": pending_research_query,
+        "research_offered": research_offered,
+        "requires_deep_research": False,
     }
 
     # グラフ実行
@@ -496,6 +572,9 @@ async def run_conversation(
 
     # Intent Badge 生成
     intent_value = result.get("intent", "chat")
+    # research_trigger は内部ルーティング用なので、UI表示は knowledge として扱う
+    if intent_value == "research_trigger":
+        intent_value = "knowledge"
     try:
         intent_enum = ConversationIntent(intent_value)
     except ValueError:
@@ -534,6 +613,7 @@ async def run_conversation(
             "intent": intent_enum.value,
             "confidence": intent_badge.confidence,
             "has_background_task": background_task is not None,
+            "research_offered": result.get("research_offered", False),
             "duration_ms": duration_ms,
         },
     )

@@ -337,11 +337,17 @@ def process_log_for_insight(self, log_id: str):
 @celery_app.task(bind=True, max_retries=3)
 def deep_research_task(self, query: str, user_id: str):
     """
-    Knowledge Node からキックされる非同期調査タスク
+    対話型ディープ・リサーチ・タスク
 
-    ユーザーの質問に対してDEEPモデルで詳細な調査を行い、
-    結果をCeleryバックエンド経由で返す。
-    将来的にWebSocket通知やDB保存にも対応可能。
+    knowledge_node / research_trigger_node からキックされる非同期調査タスク。
+    DEEPモデルで詳細な調査を行い、InsightDistillerで構造化し、
+    データベースを更新してWebSocket（将来）でフロントエンドへ通知する。
+
+    処理フロー:
+    1. DEEPモデルで包括的な調査レポートを生成
+    2. InsightDistillerで結果を構造化
+    3. データベース（RawLog）に調査結果を保存
+    4. WebSocket通知（現在はログ出力で代替、将来対応予定）
     """
     async def _research():
         await engine.dispose()
@@ -376,13 +382,75 @@ def deep_research_task(self, query: str, user_id: str):
                 temperature=0.3,
             )
 
-            logger.info(f"Deep research completed for user_id: {user_id}")
+            raw_report = result.content
+            logger.info(f"Deep research LLM completed for user_id: {user_id}")
+
+            # InsightDistiller で結果を構造化
+            structured_result = None
+            try:
+                structured_result = await insight_distiller.distill(
+                    raw_report,
+                    metadata={
+                        "intent": "deep_research",
+                        "emotions": [],
+                        "topics": [],
+                        "tags": ["deep_research"],
+                    },
+                )
+                logger.info(
+                    f"Deep research structured for user_id: {user_id}, "
+                    f"title: {structured_result.get('title', 'N/A')}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"InsightDistiller failed for deep research: {str(e)}",
+                    exc_info=True,
+                )
+
+            # データベースに調査結果をRawLogとして保存
+            saved_log_id = None
+            try:
+                async with async_session_maker() as session:
+                    research_log = RawLog(
+                        user_id=uuid.UUID(user_id) if user_id else None,
+                        content=f"[Deep Research] {query}\n\n{raw_report}",
+                        content_type="text",
+                        intent=LogIntent.LOG,
+                        topics=structured_result.get("topics", []) if structured_result else [],
+                        tags=(structured_result.get("tags", []) if structured_result else []) + ["deep_research"],
+                        is_analyzed=True,
+                    )
+                    session.add(research_log)
+                    await session.commit()
+                    await session.refresh(research_log)
+                    saved_log_id = str(research_log.id)
+                    logger.info(f"Deep research saved as RawLog: {saved_log_id}")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to save deep research to DB: {str(e)}",
+                    exc_info=True,
+                )
+
+            # WebSocket通知（将来対応予定）
+            # 現在はログ出力で代替。WebSocket実装後に以下を置き換える:
+            # await websocket_manager.send_to_user(user_id, {
+            #     "type": "deep_research_completed",
+            #     "query": query,
+            #     "report_preview": raw_report[:200],
+            #     "log_id": saved_log_id,
+            # })
+            logger.info(
+                f"[WebSocket placeholder] Deep research completed notification "
+                f"for user_id: {user_id}, log_id: {saved_log_id}"
+            )
 
             return {
                 "status": "success",
                 "user_id": user_id,
                 "query": query,
-                "report": result.content,
+                "report": raw_report,
+                "structured": structured_result,
+                "log_id": saved_log_id,
             }
 
         except Exception as e:

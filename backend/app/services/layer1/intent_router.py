@@ -106,6 +106,14 @@ _KEYWORD_MAP = {
 }
 
 
+# 探索的な問い（ディープ・リサーチの候補）を検知するキーワード
+_EXPLORATORY_KEYWORDS = [
+    "について教えて", "について調べて", "について知りたい",
+    "教えて", "調べて", "リサーチ", "調査して",
+    "最新の", "トレンド", "動向", "まとめて",
+]
+
+
 class IntentRouter:
     """
     Intent Router (仮説駆動型意図分類器)
@@ -129,6 +137,11 @@ class IntentRouter:
             except Exception:
                 pass
         return self._provider
+
+    @staticmethod
+    def _check_exploratory(input_text: str) -> bool:
+        """探索的な問い（ディープ・リサーチの候補）かどうかを検知"""
+        return any(kw in input_text for kw in _EXPLORATORY_KEYWORDS)
 
     async def classify(
         self,
@@ -156,6 +169,7 @@ class IntentRouter:
                 "previous_evaluation": PreviousEvaluation,
                 "needs_probing": bool,
                 "reasoning": str,
+                "requires_deep_research": bool,      # 探索的な問いフラグ
             }
         """
         logger.info(
@@ -166,14 +180,23 @@ class IntentRouter:
             },
         )
 
+        # 探索的な問いの予備的検知
+        is_exploratory = self._check_exploratory(input_text)
+
         provider = self._get_provider()
         if not provider:
             result = self._fallback_classify(input_text)
+            # 探索的な問いの場合、knowledge へ誘導し requires_deep_research を立てる
+            if is_exploratory:
+                result["intent"] = ConversationIntent.KNOWLEDGE
+                result["primary_intent"] = ConversationIntent.KNOWLEDGE
+                result["requires_deep_research"] = True
             logger.info(
                 "classify completed (fallback)",
                 metadata={
                     "intent": result["intent"].value,
                     "confidence": result["confidence"],
+                    "requires_deep_research": result.get("requires_deep_research", False),
                     "method": "keyword_fallback",
                 },
             )
@@ -202,6 +225,17 @@ class IntentRouter:
                 temperature=0.2,
             )
             parsed = self._parse_hypothesis_result(result)
+
+            # 探索的な問いの場合、knowledge ノードへ誘導し、requires_deep_research を立てる
+            if is_exploratory and parsed["primary_intent"] == ConversationIntent.KNOWLEDGE:
+                parsed["requires_deep_research"] = True
+            elif is_exploratory:
+                # LLM が knowledge 以外と判断しても、探索的キーワードがあれば
+                # knowledge に上書きして内部知識検索を優先する
+                parsed["intent"] = ConversationIntent.KNOWLEDGE
+                parsed["primary_intent"] = ConversationIntent.KNOWLEDGE
+                parsed["requires_deep_research"] = True
+
             logger.info(
                 "classify completed",
                 metadata={
@@ -211,6 +245,7 @@ class IntentRouter:
                     "secondary_intent": parsed["secondary_intent"].value,
                     "secondary_confidence": parsed["secondary_confidence"],
                     "needs_probing": parsed["needs_probing"],
+                    "requires_deep_research": parsed.get("requires_deep_research", False),
                     "method": "llm",
                 },
             )
@@ -220,7 +255,12 @@ class IntentRouter:
                 "classify failed, using fallback",
                 metadata={"error": str(e)},
             )
-            return self._fallback_classify(input_text)
+            result = self._fallback_classify(input_text)
+            if is_exploratory:
+                result["intent"] = ConversationIntent.KNOWLEDGE
+                result["primary_intent"] = ConversationIntent.KNOWLEDGE
+                result["requires_deep_research"] = True
+            return result
 
     def _get_system_prompt(self) -> str:
         return ROUTER_PROMPT
@@ -274,6 +314,7 @@ class IntentRouter:
             "previous_evaluation": previous_evaluation,
             "needs_probing": needs_probing,
             "reasoning": reasoning,
+            "requires_deep_research": False,  # デフォルトはFalse、classify()で上書き
         }
 
     @staticmethod
@@ -319,6 +360,7 @@ class IntentRouter:
                 "previous_evaluation": PreviousEvaluation.NONE,
                 "needs_probing": False,
                 "reasoning": "No keywords matched, defaulting to chat.",
+                "requires_deep_research": False,
             }
 
         # スコアを正規化して信頼度とする
@@ -347,6 +389,7 @@ class IntentRouter:
             "previous_evaluation": PreviousEvaluation.NONE,
             "needs_probing": needs_probing,
             "reasoning": f"Keyword fallback: {primary_intent.value}={primary_score}, {secondary_intent.value}={secondary_score}",
+            "requires_deep_research": False,
         }
 
 

@@ -50,6 +50,13 @@ class IntentHypothesis(BaseModel):
     reasoning: str = Field(default="", description="仮説の根拠")
 
 
+class ResearchProposal(BaseModel):
+    """ディープ・リサーチの提案情報"""
+    query: str = Field(description="提案中の調査クエリ")
+    internal_summary: str = Field(description="内部知識からの回答要約")
+    proposal_message: str = Field(description="ユーザーへの調査提案メッセージ")
+
+
 class ConversationRequest(BaseModel):
     """会話リクエスト"""
     message: str = Field(..., min_length=1, description="ユーザー入力テキスト")
