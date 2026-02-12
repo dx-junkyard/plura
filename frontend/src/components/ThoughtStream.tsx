@@ -323,6 +323,9 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
 
       addMessage(replyMessage);
 
+      // スレッドを継続するために thread_id を保存
+      setContinuingThreadId(response.thread_id);
+
       if (!response.skip_structural_analysis) {
         // 構造分析のポーリングを開始
         setPendingLogIds(prev => [...prev, response.log_id]);
@@ -465,7 +468,7 @@ MINDYARD で思考を整理しました`;
     addMessage(transcribingMessage);
 
     try {
-      const response: AckResponse = await api.transcribeAudio(audioBlob);
+      const response: AckResponse = await api.transcribeAudio(audioBlob, continuingThreadId);
 
       // 「解析中」メッセージを削除し、結果を表示
       const userMsg: ChatMessage = {
@@ -493,6 +496,9 @@ MINDYARD で思考を整理しました`;
         userMsg,
         replyMsg,
       ]);
+
+      // スレッドを継続するために thread_id を保存
+      setContinuingThreadId(response.thread_id);
 
       if (!response.skip_structural_analysis) {
         // 構造分析のポーリングを開始

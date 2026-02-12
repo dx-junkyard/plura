@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, status, UploadFile, File
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from openai import AsyncOpenAI
@@ -110,8 +110,12 @@ async def create_log(
     except Exception:
         pass
 
-    # 同一スレッド内の直前の構造的課題を取得（Situation Router 用）
+    # 直前の構造的課題を取得（Situation Router 用）
+    # 1. 同一スレッド内を探す → 2. なければスレッド横断で直近ログを参照
     previous_topic = None
+    prev_log = None
+
+    # ── 1. 同一スレッド内 ──
     if log.thread_id:
         prev_result = await session.execute(
             select(RawLog)
@@ -124,11 +128,25 @@ async def create_log(
             .limit(1)
         )
         prev_log = prev_result.scalar_one_or_none()
-        if prev_log and prev_log.structural_analysis:
-            previous_topic = (
-                prev_log.structural_analysis.get("updated_structural_issue")
-                or prev_log.structural_analysis.get("structural_issue")
+
+    # ── 2. フォールバック: スレッド横断で直近ログ ──
+    if prev_log is None:
+        fallback_result = await session.execute(
+            select(RawLog)
+            .where(
+                RawLog.user_id == current_user.id,
+                RawLog.id != log.id,
             )
+            .order_by(desc(RawLog.created_at))
+            .limit(1)
+        )
+        prev_log = fallback_result.scalar_one_or_none()
+
+    if prev_log and prev_log.structural_analysis:
+        previous_topic = (
+            prev_log.structural_analysis.get("updated_structural_issue")
+            or prev_log.structural_analysis.get("structural_issue")
+        )
 
     # 状況をコードで分類し、会話エージェントに渡す
     situation = situation_router.classify(log_in.content, previous_topic)
@@ -152,6 +170,7 @@ async def create_log(
     # 受容的な相槌を返す
     return AckResponse.create_ack(
         log_id=log.id,
+        thread_id=log.thread_id,
         intent=log.intent,
         emotions=log.emotions,
         content=log.content,
@@ -284,6 +303,7 @@ async def get_logs_by_month(
 @router.post("/transcribe", response_model=AckResponse, status_code=status.HTTP_201_CREATED)
 async def transcribe_audio(
     audio: UploadFile = File(...),
+    thread_id: Optional[str] = Form(None),
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -332,12 +352,13 @@ async def transcribe_audio(
                 detail="音声を認識できませんでした。もう一度お試しください。",
             )
 
-        # ログの作成（音声は新規スレッド）
+        # ログの作成（thread_id が指定されていれば同一スレッドに継続）
+        parsed_thread_id = uuid.UUID(thread_id) if thread_id else None
         log = RawLog(
             user_id=current_user.id,
             content=transcribed_text,
             content_type="voice",
-            thread_id=None,
+            thread_id=parsed_thread_id,
         )
         session.add(log)
         await session.commit()
@@ -393,6 +414,7 @@ async def transcribe_audio(
 
         return AckResponse.create_ack(
             log_id=log.id,
+            thread_id=log.thread_id,
             intent=log.intent,
             emotions=log.emotions,
             content=log.content,

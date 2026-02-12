@@ -105,9 +105,12 @@ class ApiClient {
     return data;
   }
 
-  async transcribeAudio(audioBlob: Blob): Promise<AckResponse> {
+  async transcribeAudio(audioBlob: Blob, threadId?: string | null): Promise<AckResponse> {
     const formData = new FormData();
     formData.append('audio', audioBlob, 'recording.webm');
+    if (threadId) {
+      formData.append('thread_id', threadId);
+    }
 
     const { data } = await this.client.post<AckResponse>('/logs/transcribe', formData, {
       headers: {

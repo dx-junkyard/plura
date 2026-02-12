@@ -23,11 +23,10 @@ logger = logging.getLogger(__name__)
 # スレッド内の履歴を多めに取得（会話の流れを把握する）
 CONVERSATION_HISTORY_LIMIT = 10
 
-# ────────────────────────────────────────
-# 知的好奇心旺盛な思考パートナーのプロンプト
-# 「聞くだけ」ではなく「一緒に考える」存在として設計
-# ────────────────────────────────────────
-_CONVERSATION_SYSTEM_PROMPT = """\
+# ════════════════════════════════════════
+# Talk モード: 思考パートナー（対話・共感・整理）
+# ════════════════════════════════════════
+_TALK_SYSTEM_PROMPT = """\
 あなたは知的好奇心旺盛な「思考パートナー」です。
 相手の話に真剣に向き合い、自分の知識も活かしながら対話します。
 
@@ -76,6 +75,76 @@ _CONVERSATION_SYSTEM_PROMPT = """\
 
 ## 文体
 です・ます調。知的で親しみやすく、対等な立場で。"""
+
+
+# ════════════════════════════════════════
+# Do モード: 実行パートナー（結論→手順→コード→罠）
+# ════════════════════════════════════════
+_DO_SYSTEM_PROMPT = """\
+あなたは優秀な「実行パートナー」です。
+相手が求めているのは共感ではなく**具体的な成果物**です。
+会話履歴の文脈を踏まえ、即座に実行可能な回答を出してください。
+
+## 応答フォーマット（必ずこの順序で）
+
+**1. 結論（1〜2行）**
+何をすべきか / 答えは何か を最初に明示。
+
+**2. 手順（番号付き）**
+すぐ実行できるステップを具体的に。抽象的な「検討する」は禁止。
+
+**3. すぐ動く最小コード or コマンド**（該当する場合）
+コピペで動くものを出す。「イメージとしては〜」のような曖昧な擬似コードは禁止。
+技術的な話でない場合はこのセクションを省略してよい。
+
+**4. 失敗しがちな罠と確認方法**
+初心者がハマりやすいポイントを1〜2個。
+「〜に注意してください」ではなく「〜を確認: コマンド/チェック方法」の形で。
+
+## 核心ルール
+1. **聞き返し禁止**: 会話履歴に十分な情報があるなら、聞き返さず即答する。
+2. **結論ファースト**: 前置き（「いいですね！」「了解です！」等）は1文以内。すぐ本題に入る。
+3. **具体性100%**: 技術名・ツール名・バージョン・コマンドは省略せず書く。
+4. 会話履歴に計画・設計・仕様があるなら、それを**そのまま活かして**回答する。
+   勝手に別の方針に変えない。
+5. 情報が足りないときだけ、「AとBどちらにしますか？」のように**選択肢付き**で1回だけ聞く。
+
+## 絶対禁止
+- 「何を作成しますか？」「もう少し教えてください」（履歴に情報があるのに聞く）
+- 「〜は重要ですね」「〜を検討しましょう」だけで手を動かさない
+- 共感だけの応答（「素晴らしい計画ですね！」で終わる）
+- 抽象的なアドバイス（「テストを書きましょう」→ 具体的なテストコードを出す）
+
+## 良い応答と悪い応答の具体例
+
+悪い例:
+  履歴「Next.js + Supabase でSNSを作る計画を立てた」
+  入力「作成せよ」
+  →「具体的に何を作成しますか？」
+  （履歴に全部書いてある。聞き返しは最悪の応答）
+
+良い例:
+  履歴「Next.js + Supabase でSNSを作る計画を立てた」
+  入力「作成せよ」
+  →「了解。まず最小構成で動かします。
+
+  1. プロジェクト作成
+  ```
+  npx create-next-app@latest agent-sns --ts --tailwind --app
+  cd agent-sns && npm i @supabase/supabase-js
+  ```
+
+  2. Supabase テーブル作成（SQL）
+  ```sql
+  create table profiles ( ... );
+  create table posts ( ... );
+  ```
+
+  ⚠️ 罠: Supabase の RLS を忘れると全データ公開になる。
+  確認: Supabase ダッシュボード → Authentication → Policies で各テーブルにポリシーがあるか確認。」
+
+## 文体
+です・ます調。簡潔で的確。余計な前置き・感想は最小限に。"""
 
 
 class ConversationAgent:
@@ -162,10 +231,32 @@ class ConversationAgent:
         thread_id: Optional[object] = None,
     ) -> List[Tuple[str, Optional[str]]]:
         """
-        同一スレッドの会話履歴を時系列で取得する。
+        会話履歴を時系列で取得する。
+        1. まず同一スレッド内の履歴を探す。
+        2. スレッド内に履歴がなければ（新規スレッド）、ユーザーの
+           直近ログをスレッド横断で取得する（文脈を失わないため）。
         各ログの (user_content, assistant_reply) のペアを返す。
         """
-        q = (
+        # ── 1. 同一スレッド内の履歴 ──
+        if thread_id is not None:
+            q_thread = (
+                select(RawLog)
+                .where(
+                    RawLog.user_id == user_id,
+                    RawLog.thread_id == thread_id,
+                    RawLog.id != exclude_log_id,
+                )
+                .order_by(desc(RawLog.created_at))
+                .limit(CONVERSATION_HISTORY_LIMIT)
+            )
+            result = await session.execute(q_thread)
+            logs = list(result.scalars().all())
+            if logs:
+                logs.reverse()
+                return [(log.content, log.assistant_reply) for log in logs]
+
+        # ── 2. フォールバック: スレッド横断で直近ログを取得 ──
+        q_global = (
             select(RawLog)
             .where(
                 RawLog.user_id == user_id,
@@ -174,11 +265,9 @@ class ConversationAgent:
             .order_by(desc(RawLog.created_at))
             .limit(CONVERSATION_HISTORY_LIMIT)
         )
-        if thread_id is not None:
-            q = q.where(RawLog.thread_id == thread_id)
-        result = await session.execute(q)
+        result = await session.execute(q_global)
         logs = list(result.scalars().all())
-        logs.reverse()  # 時系列順にする
+        logs.reverse()
         return [(log.content, log.assistant_reply) for log in logs]
 
     def _build_messages(
@@ -192,15 +281,32 @@ class ConversationAgent:
         ai-agent-playground-101 方式: system + 過去のやり取り + 今回の発話。
         SituationRouter の結果はシステムプロンプトに短いヒントとして追加し、
         ユーザー発話は一切改変しない（自然さを保つため）。
+
+        短い発話（命令形など）+ 履歴がある場合は、直近ログの要約を
+        システムプロンプトに注入して LLM が文脈を確実に把握できるようにする。
         """
-        # システムプロンプト
-        system_prompt = _CONVERSATION_SYSTEM_PROMPT
+        # ── Do / Talk モード切り替え ──
+        is_do = situation.do_mode if situation else False
+        system_prompt = _DO_SYSTEM_PROMPT if is_do else _TALK_SYSTEM_PROMPT
 
         # 状況ヒントをシステムプロンプト末尾に追加（ユーザー発話には触れない）
         if situation and situation.situation_type != "generic":
             hint = self._situation_hint(situation)
             if hint:
                 system_prompt += f"\n\n【今回の状況ヒント】\n{hint}"
+
+        # ── 短い発話 + 履歴あり → 直近の会話コンテキストを明示的に要約して注入 ──
+        is_short_utterance = len(new_content.strip()) <= 30
+        if is_short_utterance and history:
+            context_summary = self._summarize_recent_context(history)
+            if context_summary:
+                system_prompt += (
+                    f"\n\n【直近の会話コンテキスト（重要）】\n"
+                    f"ユーザーの発話が短いため、直前の会話内容を以下に要約します。"
+                    f"この文脈を踏まえて応答してください。"
+                    f"「何についてですか？」のような聞き返しは禁止。\n\n"
+                    f"{context_summary}"
+                )
 
         messages: List[dict] = [{"role": "system", "content": system_prompt}]
 
@@ -213,6 +319,42 @@ class ConversationAgent:
         # 今回のユーザー発話（改変しない）
         messages.append({"role": "user", "content": new_content})
         return messages
+
+    @staticmethod
+    def _summarize_recent_context(
+        history: List[Tuple[str, Optional[str]]],
+        max_chars: int = 1500,
+    ) -> Optional[str]:
+        """
+        直近の会話履歴から要約テキストを生成する。
+        LLM を使わず、直近のユーザー発話を連結して文脈として提供する。
+        長い発話は冒頭を切り出し、全体で max_chars に収める。
+        """
+        if not history:
+            return None
+
+        parts: List[str] = []
+        total = 0
+        # 新しい方から辿り、最大 max_chars 分を収集
+        for user_content, assistant_reply in reversed(history):
+            snippet = user_content.strip()
+            if len(snippet) > 400:
+                snippet = snippet[:400] + "…（省略）"
+            entry = f"- ユーザー: {snippet}"
+            if assistant_reply:
+                reply_snippet = assistant_reply.strip()
+                if len(reply_snippet) > 200:
+                    reply_snippet = reply_snippet[:200] + "…"
+                entry += f"\n  AI: {reply_snippet}"
+            if total + len(entry) > max_chars:
+                break
+            parts.append(entry)
+            total += len(entry)
+
+        if not parts:
+            return None
+        parts.reverse()
+        return "\n".join(parts)
 
     @staticmethod
     def _situation_hint(situation: "SituationResult") -> Optional[str]:
@@ -228,6 +370,14 @@ class ConversationAgent:
                 f"相手は前の話題の「続き」を希望しています。"
                 f"履歴にある話題の具体的な内容を踏まえて、前回の会話を発展させてください。"
                 f"「その続きですね」のような薄い返答は禁止。前回の具体的な論点に言及すること。"
+            )
+        elif st == "imperative":
+            return (
+                f"相手は「{topic}」に関して行動・実行を指示しています。"
+                f"履歴に具体的な計画や内容があるはずです。それを踏まえて、"
+                f"次の具体的なアクションステップを提示してください。"
+                f"「何を作成しますか？」のような聞き返しは絶対に禁止。"
+                f"履歴の文脈から何をすべきかは明らかなので、すぐに実行に移る返答をすること。"
             )
         elif st == "correction":
             return (
