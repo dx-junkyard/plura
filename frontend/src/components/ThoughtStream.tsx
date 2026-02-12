@@ -395,6 +395,9 @@ MINDYARD で思考を整理しました`;
             type: 'assistant',
             content: log.assistant_reply,
             timestamp: new Date().toISOString(),
+            researchSummary: log.metadata_analysis?.deep_research?.summary,
+            researchDetails: log.metadata_analysis?.deep_research?.details,
+            isResearchCacheHit: log.metadata_analysis?.deep_research?.is_cache_hit,
           };
           const currentMsgs = useConversationStore.getState().messages;
           setMessages([
@@ -424,6 +427,16 @@ MINDYARD で思考を整理しました`;
   // Deep Research Step 1: 「提案」— 調査計画書を生成させる
   const handleDeepResearch = useCallback(async (message: ChatMessage) => {
     if (isResearching) return;
+
+    // 元メッセージの実行ボタンを消して再実行を防止
+    const beforeMsgs = useConversationStore.getState().messages;
+    setMessages(
+      beforeMsgs.map((m) =>
+        m.id === message.id
+          ? { ...m, requiresResearchConsent: false, researchConsentConsumed: true }
+          : m
+      )
+    );
 
     // 「計画を作成中...」メッセージを表示
     const preparingMessage: ChatMessage = {
@@ -757,8 +770,23 @@ MINDYARD で思考を整理しました`;
                 )}
               </div>
             )}
-            <p className="whitespace-pre-wrap">{message.content}</p>
-            {message.type === 'assistant' && message.requiresResearchConsent && !isResearching && !message.researchPlan && (
+            <p className="whitespace-pre-wrap">{message.researchSummary || message.content}</p>
+            {message.type === 'assistant' && message.researchDetails && (
+              <details className="mt-2 pt-2 border-t border-gray-200">
+                <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
+                  詳細を表示
+                </summary>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">
+                  {message.researchDetails}
+                </p>
+                {message.isResearchCacheHit && (
+                  <p className="mt-2 text-xs text-emerald-600">
+                    既存の共有ナレッジを再利用したため、再実行をスキップしました。
+                  </p>
+                )}
+              </details>
+            )}
+            {message.type === 'assistant' && message.requiresResearchConsent && !message.researchConsentConsumed && !isResearching && !message.researchPlan && (
               <button
                 onClick={() => handleDeepResearch(message)}
                 className="mt-3 flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-500 text-white text-sm font-medium hover:bg-indigo-600 transition-colors shadow-sm"

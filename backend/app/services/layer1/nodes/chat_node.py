@@ -105,10 +105,23 @@ async def run_chat_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     雑談ノード: カジュアルな会話に応答
 
-    1. LLM で回答を生成
-    2. requires_research_consent を判定して返す（提案のみ、実行はしない）
+    1. 入力に Deep Research トリガーキーワードがあれば即時に提案へ分岐
+    2. それ以外は LLM で回答を生成
+    3. requires_research_consent を判定して返す（提案のみ、実行はしない）
     """
     input_text = state["input_text"]
+
+    # Deep Research の明示要求がある場合は通常チャット応答を生成せず、提案導線を返す
+    if _has_research_trigger_keyword(input_text):
+        logger.info(
+            "Deep Research keyword detected. Skipping standard chat response.",
+            metadata={"input_preview": input_text[:80]},
+        )
+        return {
+            "response": "Deep Research を実行して、詳細な調査レポートを作成しますか？",
+            "requires_research_consent": True,
+        }
+
     provider = _get_provider()
 
     if not provider:

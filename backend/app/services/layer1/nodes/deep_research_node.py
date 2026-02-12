@@ -45,6 +45,7 @@ async def run_deep_research_node(state: Dict[str, Any]) -> Dict[str, Any]:
             input_text,
             previous_response,
             research_log_id,
+            research_plan if isinstance(research_plan, dict) else None,
         )
 
         logger.info(

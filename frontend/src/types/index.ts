@@ -51,6 +51,20 @@ export interface RawLog {
   emotion_scores: Record<string, number> | null;
   topics: string[] | null;
   structural_analysis: StructuralAnalysis | null;
+  metadata_analysis: {
+    deep_research?: {
+      title?: string;
+      topic?: string;
+      scope?: string;
+      perspectives?: string[];
+      summary?: string;
+      details?: string;
+      requested_by_user_id?: string;
+      is_cache_hit?: boolean;
+      cached_insight_id?: string | null;
+    };
+    [key: string]: unknown;
+  } | null;
   assistant_reply: string | null;  // 会話エージェントの自然言語返答
   is_analyzed: boolean;
   is_processed_for_insight: boolean;

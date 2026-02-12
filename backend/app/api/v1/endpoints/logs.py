@@ -8,7 +8,7 @@ from typing import Optional
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from openai import AsyncOpenAI
 
@@ -39,6 +39,20 @@ def get_openai_client() -> AsyncOpenAI:
     if _openai_client is None and settings.openai_api_key:
         _openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
     return _openai_client
+
+
+def _log_visibility_filter(current_user_id: uuid.UUID):
+    """
+    通常ログは user_id で可視化し、Deep Research(system所有)は requested_by_user_id で可視化する。
+    """
+    requested_deep_research = and_(
+        RawLog.content_type == "deep_research",
+        RawLog.metadata_analysis["deep_research"]["requested_by_user_id"].astext == str(current_user_id),
+    )
+    return or_(
+        RawLog.user_id == current_user_id,
+        requested_deep_research,
+    )
 
 
 @router.post("/", response_model=AckResponse, status_code=status.HTTP_201_CREATED)
@@ -172,7 +186,7 @@ async def list_logs(
     """
     # 総数を取得
     count_result = await session.execute(
-        select(func.count(RawLog.id)).where(RawLog.user_id == current_user.id)
+        select(func.count(RawLog.id)).where(_log_visibility_filter(current_user.id))
     )
     total = count_result.scalar()
 
@@ -180,7 +194,7 @@ async def list_logs(
     offset = (page - 1) * page_size
     result = await session.execute(
         select(RawLog)
-        .where(RawLog.user_id == current_user.id)
+        .where(_log_visibility_filter(current_user.id))
         .order_by(desc(RawLog.created_at))
         .offset(offset)
         .limit(page_size)
@@ -205,7 +219,7 @@ async def get_log(
     result = await session.execute(
         select(RawLog).where(
             RawLog.id == log_id,
-            RawLog.user_id == current_user.id,
+            _log_visibility_filter(current_user.id),
         )
     )
     log = result.scalar_one_or_none()

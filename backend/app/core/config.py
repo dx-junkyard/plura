@@ -105,6 +105,7 @@ class Settings(BaseSettings):
 
     # Layer 2 Processing
     sharing_threshold_score: int = 70  # 共有価値スコアの閾値
+    system_bot_user_id: str = "00000000-0000-0000-0000-000000000001"
 
     # CORS
     backend_cors_origins: List[str] = ["http://localhost:3000", "http://localhost:8000"]
