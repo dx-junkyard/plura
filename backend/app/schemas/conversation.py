@@ -9,7 +9,7 @@ Hypothesis-Driven Intent Routing:
 import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Literal
+from typing import Any, Dict, Optional, List, Literal
 
 from pydantic import BaseModel, Field
 
@@ -50,6 +50,15 @@ class IntentHypothesis(BaseModel):
     reasoning: str = Field(default="", description="仮説の根拠")
 
 
+class ResearchPlan(BaseModel):
+    """調査計画書（Research Brief）"""
+    title: str = Field(description="調査タイトル")
+    topic: str = Field(description="具体的な調査主題")
+    scope: str = Field(description="対象範囲（地域・年代・分野など）")
+    perspectives: List[str] = Field(description="調査の視点・切り口")
+    sanitized_query: str = Field(description="個人情報を排除した検索クエリ")
+
+
 class ConversationRequest(BaseModel):
     """会話リクエスト"""
     message: str = Field(..., min_length=1, description="ユーザー入力テキスト")
@@ -59,7 +68,15 @@ class ConversationRequest(BaseModel):
     )
     research_approved: bool = Field(
         False,
-        description="Deep Research の実行をユーザーが承認した場合 True",
+        description="Deep Research の提案フェーズを開始する場合 True",
+    )
+    research_plan_confirmed: bool = Field(
+        False,
+        description="調査計画書を確認済みで実行を開始する場合 True",
+    )
+    research_plan: Optional[Dict[str, Any]] = Field(
+        None,
+        description="確認済みの調査計画書データ",
     )
     thread_id: Optional[str] = Field(
         None,
@@ -104,6 +121,10 @@ class ConversationResponse(BaseModel):
     is_researching: bool = Field(
         default=False,
         description="Deep Research が非同期実行中の場合 True",
+    )
+    research_plan: Optional[ResearchPlan] = Field(
+        default=None,
+        description="調査計画書（ユーザー確認待ち）",
     )
 
 

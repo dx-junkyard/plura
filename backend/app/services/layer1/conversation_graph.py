@@ -23,6 +23,7 @@ from app.schemas.conversation import (
     IntentBadge,
     IntentHypothesis,
     BackgroundTask,
+    ResearchPlan,
     PreviousEvaluation,
     INTENT_DISPLAY_MAP,
 )
@@ -35,6 +36,7 @@ from app.services.layer1.nodes import (
     run_brainstorm_node,
     run_state_node,
     run_deep_research_node,
+    run_research_proposal_node,
 )
 
 logger = get_traced_logger("Graph")
@@ -63,7 +65,9 @@ class AgentState(TypedDict, total=False):
     alternative_intent: Optional[str]    # 僅差だった場合の第2候補（補足ヒント用）
     # Deep Research フロー
     requires_research_consent: Optional[bool]  # リサーチ提案が必要な場合 True
-    research_approved: Optional[bool]          # ユーザーがリサーチを承認した場合 True
+    research_approved: Optional[bool]          # ユーザーがリサーチ提案フェーズを開始した場合 True
+    research_plan: Optional[Dict[str, Any]]    # 調査計画書（research_proposal_node で生成）
+    research_plan_confirmed: Optional[bool]    # 調査計画が確定された場合 True
     thread_id: Optional[str]                   # 会話スレッドID
 
 
@@ -361,6 +365,17 @@ async def state_share_node(state: AgentState) -> AgentState:
     return {"response": result["response"]}
 
 
+async def research_proposal_node(state: AgentState) -> AgentState:
+    """Research Proposal Node ラッパー（調査計画書を生成）"""
+    result = await _traced_node_wrapper(
+        "ResearchProposalNode", run_research_proposal_node, state
+    )
+    update: Dict[str, Any] = {"response": result["response"]}
+    if result.get("research_plan"):
+        update["research_plan"] = result["research_plan"]
+    return update
+
+
 async def deep_research_node(state: AgentState) -> AgentState:
     """Deep Research Node ラッパー（Celery 非同期タスクをキック）"""
     result = await _traced_node_wrapper(
@@ -499,11 +514,22 @@ async def probe_node(state: AgentState) -> AgentState:
 # --- 条件分岐関数 ---
 
 def decide_next_node(state: AgentState) -> str:
-    """Router の結果に基づいて次のノードを決定"""
-    # research_approved が True の場合、直接 deep_research ノードへ
-    if state.get("research_approved"):
-        logger.info("Transitioning to deep_research node (user approved)")
+    """Router の結果に基づいて次のノードを決定
+
+    Deep Research 3ステップフロー:
+    1. research_plan_confirmed + research_plan → deep_research（実行）
+    2. research_approved（計画なし）→ research_proposal（計画作成）
+    3. 通常の意図分類 → 各ノード
+    """
+    # Step 3: 計画確定 → Deep Research 実行
+    if state.get("research_plan_confirmed") and state.get("research_plan"):
+        logger.info("Transitioning to deep_research node (plan confirmed)")
         return "deep_research"
+
+    # Step 1: 提案承認 → 調査計画書作成
+    if state.get("research_approved"):
+        logger.info("Transitioning to research_proposal node (creating plan)")
+        return "research_proposal"
 
     intent = state.get("intent", "chat")
     valid_intents = {"chat", "empathy", "knowledge", "deep_dive", "brainstorm", "probe", "state_share"}
@@ -532,6 +558,7 @@ def build_app_graph() -> StateGraph:
     workflow.add_node("brainstorm", brainstorm_node)
     workflow.add_node("state_share", state_share_node)
     workflow.add_node("probe", probe_node)
+    workflow.add_node("research_proposal", research_proposal_node)
     workflow.add_node("deep_research", deep_research_node)
 
     # エントリーポイント
@@ -550,6 +577,7 @@ def build_app_graph() -> StateGraph:
             "brainstorm": "brainstorm",
             "state_share": "state_share",
             "probe": "probe",
+            "research_proposal": "research_proposal",
             "deep_research": "deep_research",
         },
     )
@@ -562,6 +590,7 @@ def build_app_graph() -> StateGraph:
     workflow.add_edge("brainstorm", END)
     workflow.add_edge("state_share", END)
     workflow.add_edge("probe", END)
+    workflow.add_edge("research_proposal", END)
     workflow.add_edge("deep_research", END)
 
     return workflow.compile()
@@ -580,6 +609,8 @@ async def run_conversation(
     previous_intent: Optional[str] = None,
     previous_response: Optional[str] = None,
     research_approved: bool = False,
+    research_plan_confirmed: bool = False,
+    research_plan: Optional[Dict[str, Any]] = None,
     thread_id: Optional[str] = None,
 ) -> ConversationResponse:
     """
@@ -591,7 +622,9 @@ async def run_conversation(
         mode_override: モード強制上書き（Mode Switcher）
         previous_intent: 前回の意図（仮説検証用）
         previous_response: 前回のAI回答（仮説検証用）
-        research_approved: ユーザーが Deep Research を承認した場合 True
+        research_approved: 提案フェーズ開始の場合 True
+        research_plan_confirmed: 調査計画確定の場合 True
+        research_plan: 確定済み調査計画書データ
         thread_id: 会話スレッドID（Deep Research の結果保存先）
 
     Returns:
@@ -604,6 +637,7 @@ async def run_conversation(
             "user_id": user_id,
             "mode_override": mode_override,
             "research_approved": research_approved,
+            "research_plan_confirmed": research_plan_confirmed,
             "thread_id": thread_id,
         },
     )
@@ -627,6 +661,8 @@ async def run_conversation(
         # Deep Research フロー
         "requires_research_consent": None,
         "research_approved": research_approved or None,
+        "research_plan": research_plan,
+        "research_plan_confirmed": research_plan_confirmed or None,
         "thread_id": thread_id,
     }
 
@@ -665,6 +701,15 @@ async def run_conversation(
         and bg_info.get("task_type") == "deep_research"
     )
 
+    # Research Plan の構造化
+    raw_plan = result.get("research_plan")
+    research_plan_response = None
+    if raw_plan and isinstance(raw_plan, dict):
+        try:
+            research_plan_response = ResearchPlan(**raw_plan)
+        except Exception:
+            pass
+
     conv_response = ConversationResponse(
         response=result.get("response", ""),
         intent_badge=intent_badge,
@@ -672,6 +717,7 @@ async def run_conversation(
         user_id=user_id,
         requires_research_consent=bool(result.get("requires_research_consent")),
         is_researching=is_researching,
+        research_plan=research_plan_response,
     )
 
     duration_ms = round((time.monotonic() - conv_start) * 1000, 1)

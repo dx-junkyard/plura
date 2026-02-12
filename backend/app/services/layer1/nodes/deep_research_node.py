@@ -21,10 +21,16 @@ async def run_deep_research_node(state: Dict[str, Any]) -> Dict[str, Any]:
     2. run_deep_research_task を .delay() でキック
     3. 「調査を開始しました」メッセージと background_task_info を即座に返す
     """
-    input_text = state["input_text"]
     user_id = state.get("user_id", "")
     thread_id = state.get("thread_id", "")
     previous_response = state.get("previous_response", "")
+
+    # 確定済み調査計画書がある場合は sanitized_query を使用（個人情報排除済み）
+    research_plan = state.get("research_plan")
+    if research_plan and isinstance(research_plan, dict):
+        input_text = research_plan.get("sanitized_query", state["input_text"])
+    else:
+        input_text = state["input_text"]
 
     # 結果保存先の RawLog ID を事前生成
     research_log_id = str(uuid.uuid4())

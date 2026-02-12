@@ -4,7 +4,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { User, RecommendationItem, RawLog } from '@/types';
+import type { User, RecommendationItem, RawLog, ResearchPlan } from '@/types';
 
 interface AuthState {
   user: User | null;
@@ -87,6 +87,7 @@ export interface ChatMessage {
   };
   isVoiceInput?: boolean;
   requiresResearchConsent?: boolean; // Deep Research 提案フラグ
+  researchPlan?: ResearchPlan; // 調査計画書（ユーザー確認待ち）
 }
 
 /** RawLog → ChatMessage[] 変換（バックエンドのログを会話メッセージに復元） */

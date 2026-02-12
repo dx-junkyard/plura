@@ -143,10 +143,20 @@ export interface BackgroundTask {
   result_log_id?: string; // 結果が保存される RawLog の ID（ポーリング用）
 }
 
+export interface ResearchPlan {
+  title: string;
+  topic: string;
+  scope: string;
+  perspectives: string[];
+  sanitized_query: string;
+}
+
 export interface ConversationRequest {
   message: string;
   mode_override?: ConversationIntent;
-  research_approved?: boolean; // Deep Research を承認する場合 true
+  research_approved?: boolean; // 提案フェーズ開始
+  research_plan_confirmed?: boolean; // 調査計画確定で実行開始
+  research_plan?: ResearchPlan; // 確認済みの調査計画書
   thread_id?: string; // 会話スレッドID
 }
 
@@ -158,6 +168,7 @@ export interface ConversationResponse {
   timestamp: string;
   requires_research_consent?: boolean; // Deep Research の提案が含まれている場合 true
   is_researching?: boolean; // Deep Research が非同期実行中の場合 true
+  research_plan?: ResearchPlan | null; // 調査計画書（ユーザー確認待ち）
 }
 
 // Recommendations
