@@ -33,12 +33,15 @@ class LogIntent(str, Enum):
     - LOG: 単に記録したい
     - VENT: 愚痴を言いたい
     - STRUCTURE: 整理したい
+    - STATE: コンディション・状態記録
+    - DEEP_RESEARCH: AIによる能動的な調査・リサーチ
     """
 
     LOG = "log"
     VENT = "vent"
     STRUCTURE = "structure"
     STATE = "state"  # コンディション・状態記録
+    DEEP_RESEARCH = "deep_research"  # Deep Research 依頼
 
 
 class EmotionTag(str, Enum):
@@ -53,6 +56,22 @@ class EmotionTag(str, Enum):
     EXCITED = "excited"  # 興奮
     NEUTRAL = "neutral"  # 中立
 
+
+# 追加: DB内の値が大文字・小文字混在している状態に対応するためのマッピング関数
+def resolve_log_intent_values(enum_cls):
+    """
+    SQLAlchemyのEnumマッピング用関数
+    DBのEnum定義が歴史的経緯で大文字/小文字混在しているため、それに合わせる
+    - 新規値(DEEP_RESEARCH): 小文字 (Value) -> 'deep_research'
+    - 既存値(LOG, VENT...): 大文字 (Name) -> 'LOG', 'VENT'
+    """
+    values = []
+    for member in enum_cls:
+        if member.name == "DEEP_RESEARCH":
+            values.append(member.value)  # "deep_research"
+        else:
+            values.append(member.name)   # "LOG", "VENT", "STRUCTURE", "STATE"
+    return values
 
 class RawLog(Base):
     """
@@ -95,7 +114,7 @@ class RawLog(Base):
 
     # Context Analyzer によるメタデータ
     intent: Mapped[Optional[LogIntent]] = mapped_column(
-        SQLEnum(LogIntent),
+        SQLEnum(LogIntent, values_callable=resolve_log_intent_values),
         nullable=True,
     )
     emotions: Mapped[Optional[List[str]]] = mapped_column(

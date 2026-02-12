@@ -122,6 +122,9 @@ class AckResponse(BaseModel):
                 "整理を始めますね。",
                 "承知しました。",
             ],
+            LogIntent.DEEP_RESEARCH: [
+                "調査を開始します。少々お待ちください。",
+            ],
             None: [
                 "受領しました。",
             ],

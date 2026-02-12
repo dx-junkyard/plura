@@ -21,7 +21,7 @@ export interface Token {
 }
 
 // Log Intent
-export type LogIntent = 'log' | 'vent' | 'structure' | 'state';
+export type LogIntent = 'log' | 'vent' | 'structure' | 'state' | 'deep_research';
 
 // Model Info
 export interface ModelInfo {

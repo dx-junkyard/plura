@@ -80,7 +80,7 @@ class ContextAnalyzer:
 
 必ず以下のJSON形式で応答してください:
 {
-    "intent": "log" | "vent" | "structure" | "state",
+    "intent": "log" | "vent" | "structure" | "state" | "deep_research",
     "emotions": ["emotion1", "emotion2"],
     "emotion_scores": {"emotion1": 0.8, "emotion2": 0.5},
     "topics": ["topic1", "topic2"],
@@ -97,6 +97,8 @@ intent の判定基準:
 - "state": 現在の状態・コンディションの報告（体調、気分、天気、短い感想など）。
   ポジティブ（「いい天気だ」「気分が良い」）でもネガティブ（「眠い」「疲れた」）でも、
   分析や助けを求めていない短い状態共有はすべて state に分類する。
+- "deep_research": 「調査して」「調べて」「Deep Researchして」など、AIによる能動的な外部情報の調査・リサーチを求めている。
+  ※単なる知識の問い（〜とは？）ではなく、深い調査を依頼している場合。
 
 emotions の選択肢:
 - frustrated (焦り)
@@ -132,6 +134,7 @@ JSON形式で解析結果を返してください。"""
             "vent": LogIntent.VENT,
             "structure": LogIntent.STRUCTURE,
             "state": LogIntent.STATE,
+            "deep_research": LogIntent.DEEP_RESEARCH,
         }
         intent = intent_map.get(intent_str, LogIntent.LOG)
 
@@ -173,6 +176,7 @@ JSON形式で解析結果を返してください。"""
             "暑い", "寒い", "頭痛い", "天気", "気分", "体調",
             "終わったー", "帰りたい", "目覚めた",
         ]
+        deep_research_keywords = ["deep research", "調査して", "調べて", "リサーチ", "深掘りして"]
 
         has_negative = False
         has_positive = False
@@ -203,10 +207,15 @@ JSON形式で解析結果を返してください。"""
             emotion_scores["neutral"] = 0.5
 
         # インテント判定
+        # Deep Research キーワードの検出
+        has_deep_research = any(kw in content.lower() for kw in deep_research_keywords)
         # 状態共有キーワードの検出
         has_state = any(kw in content for kw in state_keywords)
 
-        if has_state or (has_positive and not has_negative and len(content) < 30):
+        if has_deep_research:
+            # AIによる能動的な調査・リサーチ依頼
+            intent = LogIntent.DEEP_RESEARCH
+        elif has_state or (has_positive and not has_negative and len(content) < 30):
             # 状態報告（ポジティブ・ネガティブ問わず短い状態共有）
             intent = LogIntent.STATE
         elif has_negative and any(kw in content for kw in ["なんで", "ひどい", "...", "愚痴", "聞いて"]):

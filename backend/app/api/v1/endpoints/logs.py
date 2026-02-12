@@ -25,7 +25,7 @@ from app.schemas.raw_log import (
 from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer1.conversation_agent import conversation_agent
 from app.services.layer1.situation_router import situation_router
-from app.workers.tasks import analyze_log_structure, process_log_for_insight
+from app.workers.tasks import analyze_log_structure, process_log_for_insight, run_deep_research_task
 from app.core.config import settings
 
 router = APIRouter()
@@ -109,8 +109,36 @@ async def create_log(
         # 解析エラーは無視（後でリトライ可能）
         pass
 
-    # 状態共有（STATE）は即時の共感応答のみ返し、構造分析は実行しない
-    if log.intent != LogIntent.STATE:
+    # Deep Research の場合、バックグラウンドタスクをキックして即時応答を返す
+    conversation_reply = None
+
+    if log.intent == LogIntent.DEEP_RESEARCH:
+        # 結果を格納するためのログIDを予約
+        research_result_log_id = uuid.uuid4()
+
+        try:
+            run_deep_research_task.delay(
+                user_id=str(current_user.id),
+                thread_id=str(log.thread_id) if log.thread_id else None,
+                query=log.content,
+                initial_context="",
+                research_log_id=str(research_result_log_id),
+                research_plan={},
+            )
+            conversation_reply = (
+                "Deep Researchのリクエストを受け付けました。"
+                "詳細な調査レポートを作成しますので、少々お待ちください。"
+                "（完了すると通知されます）"
+            )
+            log.assistant_reply = conversation_reply
+            await session.commit()
+        except Exception as e:
+            _logger = logging.getLogger(__name__)
+            _logger.error("Failed to queue deep research task: %s", e)
+            conversation_reply = "Deep Researchの開始に失敗しました。"
+
+    elif log.intent != LogIntent.STATE:
+        # 状態共有（STATE）は即時の共感応答のみ返し、構造分析は実行しない
         # 構造分析タスクを非同期でキック（Layer 2）
         try:
             analyze_log_structure.delay(str(log.id))
@@ -124,44 +152,45 @@ async def create_log(
     except Exception:
         pass
 
-    # 同一スレッド内の直前の構造的課題を取得（Situation Router 用）
-    previous_topic = None
-    if log.thread_id:
-        prev_result = await session.execute(
-            select(RawLog)
-            .where(
-                RawLog.user_id == current_user.id,
-                RawLog.thread_id == log.thread_id,
-                RawLog.id != log.id,
-            )
-            .order_by(desc(RawLog.created_at))
-            .limit(1)
-        )
-        prev_log = prev_result.scalar_one_or_none()
-        if prev_log and prev_log.structural_analysis:
-            previous_topic = (
-                prev_log.structural_analysis.get("updated_structural_issue")
-                or prev_log.structural_analysis.get("structural_issue")
-            )
-
-    # 状況をコードで分類し、会話エージェントに渡す
-    situation = situation_router.classify(log_in.content, previous_topic)
-
-    # 会話ラリー用の自然な返答を生成（スレッド履歴 + 状況）
-    conversation_reply = None
-    try:
-        conversation_reply = await conversation_agent.generate_reply(
-            session, current_user.id, log, situation=situation
-        )
-        if conversation_reply:
-            log.assistant_reply = conversation_reply
-            await session.commit()
-    except Exception as e:
-        logger = logging.getLogger(__name__)
-        logger.warning("create_log: conversation_agent failed: %s", e, exc_info=True)
+    # Deep Research 実行時は会話エージェントをスキップ（既に返答が決まっている）
     if conversation_reply is None:
-        logger = logging.getLogger(__name__)
-        logger.info("create_log: conversation_reply not generated (BALANCED LLM / OPENAI_API_KEY may be missing)")
+        # 同一スレッド内の直前の構造的課題を取得（Situation Router 用）
+        previous_topic = None
+        if log.thread_id:
+            prev_result = await session.execute(
+                select(RawLog)
+                .where(
+                    RawLog.user_id == current_user.id,
+                    RawLog.thread_id == log.thread_id,
+                    RawLog.id != log.id,
+                )
+                .order_by(desc(RawLog.created_at))
+                .limit(1)
+            )
+            prev_log = prev_result.scalar_one_or_none()
+            if prev_log and prev_log.structural_analysis:
+                previous_topic = (
+                    prev_log.structural_analysis.get("updated_structural_issue")
+                    or prev_log.structural_analysis.get("structural_issue")
+                )
+
+        # 状況をコードで分類し、会話エージェントに渡す
+        situation = situation_router.classify(log_in.content, previous_topic)
+
+        # 会話ラリー用の自然な返答を生成（スレッド履歴 + 状況）
+        try:
+            conversation_reply = await conversation_agent.generate_reply(
+                session, current_user.id, log, situation=situation
+            )
+            if conversation_reply:
+                log.assistant_reply = conversation_reply
+                await session.commit()
+        except Exception as e:
+            _logger = logging.getLogger(__name__)
+            _logger.warning("create_log: conversation_agent failed: %s", e, exc_info=True)
+        if conversation_reply is None:
+            _logger = logging.getLogger(__name__)
+            _logger.info("create_log: conversation_reply not generated (BALANCED LLM / OPENAI_API_KEY may be missing)")
 
     # 受容的な相槌を返す
     return AckResponse.create_ack(
