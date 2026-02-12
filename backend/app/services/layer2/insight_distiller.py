@@ -74,21 +74,45 @@ class InsightDistiller:
         return """あなたはMINDYARDのインサイト蒸留器です。
 ユーザーの経験や気づきを、組織全体で共有可能な汎用的な知見に変換してください。
 
-変換のポイント:
+## 最重要ルール: 不適格入力の検出
+以下に該当する入力は「知恵として共有する価値がない」と判断し、
+**すべてのフィールドを空文字列に**してください:
+- 雑談・挨拶（「おはよう」「調子どう？」）
+- 感情の吐き出しだけで学びがない（「疲れた」「むかつく」）
+- 意味のない短文やテスト投稿
+- 状況報告だけで課題も解決策もない（「会議が終わった」「ランチ行ってきた」）
+- 質問だけで回答がない（「Pythonの書き方は？」← 回答がなければ知恵にならない）
+
+不適格な場合のJSON:
+{
+    "title": "",
+    "context": "",
+    "problem": "",
+    "solution": "",
+    "summary": "",
+    "topics": [],
+    "tags": [],
+    "not_suitable": true
+}
+
+## 適格入力の場合の変換ルール
 1. 具体的な状況を抽象化する（「あの会議で怒られた」→「ステークホルダーとの期待値調整の失敗事例」）
 2. 個人的な感情は取り除き、事実とパターンに焦点を当てる
 3. 他の人が同様の状況に直面したときに役立つ形式にする
 4. 教訓やベストプラクティスとして活用できる形に整理する
+5. **solution（解決策）は具体的であること**。「気をつける」「意識する」は不可。
+   具体的な手順・ツール・行動を記述すること。
 
 必ず以下のJSON形式で応答してください:
 {
     "title": "簡潔で汎用的なタイトル（30文字以内）",
     "context": "背景・状況の説明",
     "problem": "直面した課題や問題",
-    "solution": "対処法や結果、学び",
+    "solution": "対処法や結果、学び（具体的な手順やツールを含むこと）",
     "summary": "1-2文での要約",
     "topics": ["関連トピック1", "関連トピック2"],
-    "tags": ["タグ1", "タグ2", "タグ3"]
+    "tags": ["タグ1", "タグ2", "タグ3"],
+    "not_suitable": false
 }
 
 topics の例: プロジェクト管理、コミュニケーション、技術選定、チームビルディング
@@ -108,7 +132,20 @@ tags の例: 失敗事例、成功事例、Tips、教訓、ベストプラクテ
 - タイトルは他の人が検索や一覧で見つけやすいものにしてください"""
 
     def _validate_result(self, result: Dict) -> Dict:
-        """結果の検証と正規化"""
+        """結果の検証と正規化。LLMが不適格と判断した場合は空を返す。"""
+        # LLM が not_suitable=true を返した場合
+        if result.get("not_suitable"):
+            return {
+                "title": "",
+                "context": "",
+                "problem": "",
+                "solution": "",
+                "summary": "",
+                "topics": [],
+                "tags": [],
+                "not_suitable": True,
+            }
+
         return {
             "title": result.get("title", "無題のインサイト")[:255],
             "context": result.get("context", ""),
@@ -117,6 +154,7 @@ tags の例: 失敗事例、成功事例、Tips、教訓、ベストプラクテ
             "summary": result.get("summary", result.get("title", "")),
             "topics": result.get("topics", [])[:10],
             "tags": result.get("tags", [])[:10],
+            "not_suitable": False,
         }
 
     def _fallback_distill(self, content: str) -> Dict:

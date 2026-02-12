@@ -73,21 +73,31 @@ class SharingBroker:
 
     def _get_evaluation_system_prompt(self) -> str:
         return """あなたはMINDYARDの共有価値評価エンジンです。
-インサイトカードが組織内で共有される価値があるかを評価してください。
+インサイトカードが組織内で共有される価値があるかを**厳格に**評価してください。
 
-評価基準:
+## 評価基準（5軸）
 1. 新規性 (novelty_score): 他では得られない独自の知見か
 2. 汎用性 (generality_score): 多くの人に適用可能か
-3. 総合スコア (sharing_value_score): 上記を総合した共有価値
+3. 実用性 (practicality_score): 読んだ人がすぐ行動に移せる具体的な内容か
+4. 具体性 (specificity_score): 数値・ツール名・手順など具体的な要素があるか
+5. 総合スコア (sharing_value_score): 上記を総合した共有価値
+
+## 厳格な評価ルール
+- 「解決策/結果」が空 or 曖昧（「気をつける」「改善する」等）→ 総合スコア50以下
+- 「背景」「課題」「解決策」のうち2つ以上が空 → 総合スコア40以下
+- タイトルが抽象的で検索に役立たない → 減点
+- 当たり前の内容（「コミュニケーションは大事」等）→ 新規性20以下
+- 80点以上は「読んだ人が明日から使える具体的な知見」にのみ付与
 
 スコアは0-100で評価してください。
-70点以上で共有を提案します。
 
 必ず以下のJSON形式で応答:
 {
     "sharing_value_score": 75,
     "novelty_score": 80,
     "generality_score": 70,
+    "practicality_score": 65,
+    "specificity_score": 70,
     "should_propose": true,
     "reasoning": "評価理由の説明"
 }"""
@@ -120,21 +130,46 @@ class SharingBroker:
         }
 
     def _fallback_evaluate(self, insight: Dict) -> Dict:
-        """LLMが利用できない場合のフォールバック評価"""
-        # 簡易スコアリング
-        score = 50  # ベーススコア
+        """
+        LLMが利用できない場合のフォールバック評価。
+        「存在するか」ではなく「中身に質があるか」で判定する。
+        """
+        score = 30  # ベーススコア（低めに設定し、質で加点）
 
-        # コンテンツの充実度で加点
-        if insight.get("context"):
+        context = (insight.get("context") or "").strip()
+        problem = (insight.get("problem") or "").strip()
+        solution = (insight.get("solution") or "").strip()
+        summary = (insight.get("summary") or "").strip()
+        topics = insight.get("topics") or []
+
+        # ── 必須条件: solution が充実していること ──
+        # solution がない or 短すぎる → 推奨ラインに届かない
+        if len(solution) >= 50:
+            score += 25  # 具体的な解決策がある
+        elif len(solution) >= 20:
+            score += 10  # 短いが存在する
+        # solution が空 or 極短 → 加点なし（推奨80に届かない設計）
+
+        # ── context + problem の充実度 ──
+        if len(context) >= 30:
             score += 10
-        if insight.get("problem"):
+        if len(problem) >= 20:
             score += 10
-        if insight.get("solution"):
-            score += 15
-        if len(insight.get("topics", [])) > 0:
+
+        # ── summary の充実度 ──
+        if len(summary) >= 80:
+            score += 10
+        elif len(summary) >= 40:
             score += 5
-        if len(insight.get("summary", "")) > 50:
-            score += 10
+
+        # ── トピックの有無 ──
+        if len(topics) >= 2:
+            score += 5
+
+        # ── ペナルティ: 3フィールド中2つ以上が空 ──
+        empty_count = sum(1 for f in [context, problem, solution] if len(f) < 10)
+        if empty_count >= 2:
+            score = min(score, 40)  # 上限40に制限
 
         score = min(score, 100)
 
@@ -143,7 +178,7 @@ class SharingBroker:
             "novelty_score": score,
             "generality_score": score,
             "should_propose": score >= self.threshold,
-            "reasoning": "自動評価によるスコアリング",
+            "reasoning": "自動評価（LLM未使用）: コンテンツ充実度に基づくスコアリング",
         }
 
     def generate_proposal_message(self, insight: Dict, score: float) -> str:

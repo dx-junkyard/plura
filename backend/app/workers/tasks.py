@@ -246,11 +246,48 @@ def analyze_log_structure(self, log_id: str):
     return run_async(_analyze_structure())
 
 
+# ════════════════════════════════════════
+# 品質ゲート: Insight化する価値があるかの事前チェック
+# ════════════════════════════════════════
+_MIN_CONTENT_LENGTH = 30  # これ未満はInsight化しない
+_TRIVIAL_PATTERNS = {
+    "おはよう", "おやすみ", "ありがとう", "了解", "OK", "ok", "はい",
+    "テスト", "test", "あ", "うん", "そう", "なるほど",
+}
+
+
+def _check_insight_eligibility(log: RawLog) -> Optional[str]:
+    """
+    ログがInsight化に値するかチェックする。
+    不適格なら理由文字列を返す。適格なら None を返す。
+    """
+    content = (log.content or "").strip()
+
+    # 1. 短すぎるログ
+    if len(content) < _MIN_CONTENT_LENGTH:
+        return f"too_short ({len(content)} < {_MIN_CONTENT_LENGTH})"
+
+    # 2. STATE（状態記録）は知恵にならない
+    if log.intent and log.intent.value == "state":
+        return "intent_is_state"
+
+    # 3. 定型的・意味のない投稿
+    normalized = content.replace("。", "").replace("！", "").replace("？", "").strip()
+    if normalized in _TRIVIAL_PATTERNS:
+        return f"trivial_content: {normalized}"
+
+    # 4. 数字だけ・記号だけ
+    if re.fullmatch(r"[\d\s\W]+", content):
+        return "numeric_or_symbols_only"
+
+    return None
+
+
 @celery_app.task(bind=True, max_retries=3)
 def process_log_for_insight(self, log_id: str):
     """
     Layer 2: Gateway Refinery タスク
-    ログを匿名化 → 構造化 → 評価 → 保存
+    品質ゲート → 匿名化 → 構造化 → 評価 → 保存
     """
     async def _process():
         # Ensure engine connection pool is clean for this process/task
@@ -271,6 +308,16 @@ def process_log_for_insight(self, log_id: str):
                 logger.info(f"Log already processed for insight: {log_id}")
                 return {"status": "skipped", "message": "Already processed"}
 
+            # ── 品質ゲート: Insight化する価値があるかを事前チェック ──
+            skip_reason = _check_insight_eligibility(log)
+            if skip_reason:
+                log.is_processed_for_insight = True
+                await session.commit()
+                logger.info(
+                    f"Insight skipped (quality gate): log_id={log_id}, reason={skip_reason}"
+                )
+                return {"status": "skipped", "message": skip_reason}
+
             try:
                 logger.info(f"Starting insight processing for log_id: {log_id}")
                 # Step 1: Privacy Sanitizer - 匿名化
@@ -288,6 +335,15 @@ def process_log_for_insight(self, log_id: str):
                         "tags": log.tags,
                     }
                 )
+
+                # Step 2.5: Distiller が「知恵にならない」と判断した場合はスキップ
+                if distilled.get("not_suitable"):
+                    log.is_processed_for_insight = True
+                    await session.commit()
+                    logger.info(
+                        f"Insight skipped (distiller: not_suitable): log_id={log_id}"
+                    )
+                    return {"status": "skipped", "message": "not_suitable_for_wisdom"}
 
                 # Step 3: Sharing Broker - 評価
                 evaluation = await sharing_broker.evaluate_sharing_value(distilled)

@@ -454,29 +454,49 @@ class ConversationAgent:
     async def _search_collective_wisdom(
         self,
         user_content: str,
-        limit: int = 2,
+        limit: int = 3,
         score_threshold: float = 0.70,
     ) -> List[Dict]:
         """
         ユーザーの入力を使って Qdrant（みんなの知恵）を検索する。
-        関連度が高いインサイトだけを返す。
+        関連度が高く、かつ品質が十分なインサイトだけを返す。
         """
         # 短すぎる入力では検索しない（ノイズ回避）
         if len(user_content.strip()) < 10:
             return []
 
         try:
+            # 品質フィルタ後に limit 個になるよう、多めに取得
             results = await knowledge_store.search_similar(
                 query=user_content,
-                limit=limit,
+                limit=limit * 2,
                 score_threshold=score_threshold,
             )
-            if results:
+
+            # ── 品質フィルタ: 中身が薄いインサイトを除外 ──
+            filtered = []
+            for ins in results:
+                summary = (ins.get("summary") or "").strip()
+                solution = (ins.get("solution") or "").strip()
+                title = (ins.get("title") or "").strip()
+
+                # 要約もしくは解決策に実質的な内容がないものは除外
+                if len(summary) < 20 and len(solution) < 20:
+                    logger.debug(
+                        "Collective wisdom: filtered out low-quality insight: %s",
+                        title,
+                    )
+                    continue
+                filtered.append(ins)
+                if len(filtered) >= limit:
+                    break
+
+            if filtered:
                 logger.info(
-                    "Collective wisdom: found %d insights (threshold=%.2f) for: %.30s...",
-                    len(results), score_threshold, user_content,
+                    "Collective wisdom: found %d/%d insights (after quality filter) for: %.30s...",
+                    len(filtered), len(results), user_content,
                 )
-            return results
+            return filtered
         except Exception as e:
             logger.debug("Collective wisdom search failed (non-critical): %s", e)
             return []
