@@ -388,12 +388,28 @@ MINDYARD で思考を整理しました`;
     const pollForResearchResult = async () => {
       try {
         const log = await api.getLog(researchLogId);
-        if (log.assistant_reply) {
+
+        // Deep Research の完了判定:
+        // 1. metadata_analysis.deep_research が存在する
+        // 2. assistant_reply が空でなく、受付プレースホルダーでもない
+        const hasDeepResearchMeta = log.metadata_analysis?.deep_research != null;
+        const hasRealReply =
+          log.assistant_reply != null &&
+          log.assistant_reply.trim() !== '' &&
+          !log.assistant_reply.startsWith('Deep Researchのリクエストを受け付けました');
+
+        if (hasDeepResearchMeta || hasRealReply) {
           // 結果が到着 — 「調査中...」を除去して結果を表示
+          const completionNotice: ChatMessage = {
+            id: `research-complete-${researchLogId}`,
+            type: 'system',
+            content: '調査が完了しました。',
+            timestamp: new Date().toISOString(),
+          };
           const resultMessage: ChatMessage = {
             id: `research-result-${researchLogId}`,
             type: 'assistant',
-            content: log.assistant_reply,
+            content: log.assistant_reply || log.metadata_analysis?.deep_research?.summary || '',
             timestamp: new Date().toISOString(),
             researchSummary: log.metadata_analysis?.deep_research?.summary,
             researchDetails: log.metadata_analysis?.deep_research?.details,
@@ -402,6 +418,7 @@ MINDYARD で思考を整理しました`;
           const currentMsgs = useConversationStore.getState().messages;
           setMessages([
             ...currentMsgs.filter((m) => !m.id.startsWith('researching-')),
+            completionNotice,
             resultMessage,
           ]);
           setIsResearching(false);
@@ -516,8 +533,11 @@ MINDYARD で思考を整理しました`;
       });
 
       // バックグラウンドタスクの result_log_id でポーリング開始
-      if (result.background_task?.result_log_id) {
-        setResearchLogId(result.background_task.result_log_id);
+      // API応答は background_task に統一されているが、
+      // ノード直返しの background_task_info も安全にフォールバックする
+      const bgTask = result.background_task ?? (result as any).background_task_info;
+      if (bgTask?.result_log_id) {
+        setResearchLogId(bgTask.result_log_id);
       }
 
       // 即時レスポンスを表示
