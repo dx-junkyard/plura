@@ -108,6 +108,10 @@ class ConversationResponse(BaseModel):
     """会話レスポンス"""
     response: str = Field(description="AIの即時回答")
     intent_badge: IntentBadge = Field(description="判定されたインテントバッジ")
+    background_task_info: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="Deep Research等のノードから直接返却されるタスク情報"
+    )
     background_task: Optional[BackgroundTask] = Field(
         None,
         description="非同期タスク情報（Shadow Reply用）",
