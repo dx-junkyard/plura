@@ -88,6 +88,7 @@ export interface AckResponse {
   skip_structural_analysis?: boolean;
   conversation_reply?: string; // 会話エージェントが生成した自然な返答（ラリー用）
   requires_research_consent?: boolean; // Deep Research の提案が含まれている場合 true
+  research_log_id?: string; // Deep Research 結果のポーリング先ログID
 }
 
 // Insight Card (Layer 3)

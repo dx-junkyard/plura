@@ -113,16 +113,13 @@ async def create_log(
     conversation_reply = None
 
     if log.intent == LogIntent.DEEP_RESEARCH:
-        # 結果を格納するためのログIDを予約
-        research_result_log_id = uuid.uuid4()
-
         try:
             run_deep_research_task.delay(
                 user_id=str(current_user.id),
                 thread_id=str(log.thread_id) if log.thread_id else None,
                 query=log.content,
                 initial_context="",
-                research_log_id=str(research_result_log_id),
+                research_log_id=str(log.id),
                 research_plan={},
             )
             conversation_reply = (
@@ -199,6 +196,7 @@ async def create_log(
         emotions=log.emotions,
         content=log.content,
         conversation_reply=conversation_reply,
+        research_log_id=str(log.id) if log.intent == LogIntent.DEEP_RESEARCH else None,
     )
 
 
