@@ -75,6 +75,7 @@ class AckResponse(BaseModel):
     skip_structural_analysis: bool = False
     conversation_reply: Optional[str] = None  # 会話エージェントが生成した自然な返答（ラリー用）
     requires_research_consent: bool = False  # Deep Research の提案が含まれている場合 True
+    research_log_id: Optional[str] = None  # Deep Research 結果のポーリング先ログID
 
     @classmethod
     def create_ack(
@@ -85,6 +86,7 @@ class AckResponse(BaseModel):
         content: Optional[str] = None,
         transcribed_text: Optional[str] = None,
         conversation_reply: Optional[str] = None,
+        research_log_id: Optional[str] = None,
     ) -> "AckResponse":
         """意図に応じた相槌を生成（conversation_reply がある場合はそれを優先表示用に含める）"""
         # STATE（状態共有）は即時共感のみ、構造分析はスキップ
@@ -134,11 +136,14 @@ class AckResponse(BaseModel):
         messages = ack_messages.get(intent, ack_messages[None])
         message = random.choice(messages)
 
+        skip_analysis = intent == LogIntent.DEEP_RESEARCH
+
         return cls(
             message=message,
             log_id=log_id,
             timestamp=datetime.now(),
             transcribed_text=transcribed_text,
-            skip_structural_analysis=False,
+            skip_structural_analysis=skip_analysis,
             conversation_reply=conversation_reply,
+            research_log_id=research_log_id,
         )

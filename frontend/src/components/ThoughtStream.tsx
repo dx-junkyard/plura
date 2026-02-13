@@ -329,7 +329,11 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
 
       addMessage(replyMessage);
 
-      if (!response.skip_structural_analysis) {
+      if (response.research_log_id) {
+        // Deep Research が開始された — ポーリングを開始
+        setResearchLogId(response.research_log_id);
+        setIsResearching(true);
+      } else if (!response.skip_structural_analysis) {
         // 構造分析のポーリングを開始
         setPendingLogIds(prev => [...prev, response.log_id]);
         initializeAnalysisSteps();

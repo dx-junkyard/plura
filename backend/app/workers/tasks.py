@@ -638,7 +638,9 @@ def run_deep_research_task(
                 f"cache_hit: {is_cache_hit}"
             )
 
-            # 結果を RawLog に保存（system 所有 + requested_by をメタデータで保持）
+            # 結果を RawLog に保存
+            # Path 1 (POST /logs/): 既存ログを更新
+            # Path 2 (conversation graph): 新規ログを作成（system 所有）
             async with async_session_maker() as session:
                 system_bot_user_id = await _ensure_system_bot_user(session)
                 metadata_analysis = {
@@ -654,19 +656,30 @@ def run_deep_research_task(
                         "cached_insight_id": cached_insight_id,
                     }
                 }
-                log = RawLog(
-                    id=uuid.UUID(research_log_id),
-                    user_id=system_bot_user_id,
-                    thread_id=uuid.UUID(thread_id) if thread_id else None,
-                    content=query,
-                    content_type="deep_research",
-                    assistant_reply=assistant_reply,
-                    metadata_analysis=metadata_analysis,
-                    is_analyzed=True,
-                    is_structure_analyzed=True,
-                    is_processed_for_insight=True,
-                )
-                session.add(log)
+                existing_log = await session.get(RawLog, uuid.UUID(research_log_id))
+                if existing_log:
+                    # 既存ログを更新（POST /logs/ で作成済みのログ）
+                    existing_log.assistant_reply = assistant_reply
+                    existing_log.metadata_analysis = metadata_analysis
+                    existing_log.is_analyzed = True
+                    existing_log.is_structure_analyzed = True
+                    existing_log.is_processed_for_insight = True
+                    log = existing_log
+                else:
+                    # 新規ログを作成（conversation graph 経由）
+                    log = RawLog(
+                        id=uuid.UUID(research_log_id),
+                        user_id=system_bot_user_id,
+                        thread_id=uuid.UUID(thread_id) if thread_id else None,
+                        content=query,
+                        content_type="deep_research",
+                        assistant_reply=assistant_reply,
+                        metadata_analysis=metadata_analysis,
+                        is_analyzed=True,
+                        is_structure_analyzed=True,
+                        is_processed_for_insight=True,
+                    )
+                    session.add(log)
                 await session.flush()
 
                 # Deep Research は即時に共有財産（APPROVED Insight）として作成
@@ -726,29 +739,39 @@ def run_deep_research_task(
             try:
                 async with async_session_maker() as session:
                     system_bot_user_id = await _ensure_system_bot_user(session)
-                    log = RawLog(
-                        id=uuid.UUID(research_log_id),
-                        user_id=system_bot_user_id,
-                        thread_id=uuid.UUID(thread_id) if thread_id else None,
-                        content=query,
-                        content_type="deep_research",
-                        assistant_reply=(
-                            "Deep Research の実行中にエラーが発生しました。\n"
-                            "再度お試しいただくこともできます。"
-                        ),
-                        metadata_analysis={
-                            "deep_research": {
-                                "requested_by_user_id": user_id,
-                                "summary": "Deep Research の実行中にエラーが発生しました。",
-                                "details": "再度お試しいただくこともできます。",
-                                "is_cache_hit": False,
-                            }
-                        },
-                        is_analyzed=True,
-                        is_structure_analyzed=True,
-                        is_processed_for_insight=True,
+                    error_reply = (
+                        "Deep Research の実行中にエラーが発生しました。\n"
+                        "再度お試しいただくこともできます。"
                     )
-                    session.add(log)
+                    error_metadata = {
+                        "deep_research": {
+                            "requested_by_user_id": user_id,
+                            "summary": "Deep Research の実行中にエラーが発生しました。",
+                            "details": "再度お試しいただくこともできます。",
+                            "is_cache_hit": False,
+                        }
+                    }
+                    existing_log = await session.get(RawLog, uuid.UUID(research_log_id))
+                    if existing_log:
+                        existing_log.assistant_reply = error_reply
+                        existing_log.metadata_analysis = error_metadata
+                        existing_log.is_analyzed = True
+                        existing_log.is_structure_analyzed = True
+                        existing_log.is_processed_for_insight = True
+                    else:
+                        log = RawLog(
+                            id=uuid.UUID(research_log_id),
+                            user_id=system_bot_user_id,
+                            thread_id=uuid.UUID(thread_id) if thread_id else None,
+                            content=query,
+                            content_type="deep_research",
+                            assistant_reply=error_reply,
+                            metadata_analysis=error_metadata,
+                            is_analyzed=True,
+                            is_structure_analyzed=True,
+                            is_processed_for_insight=True,
+                        )
+                        session.add(log)
                     await session.commit()
             except Exception:
                 logger.error(
