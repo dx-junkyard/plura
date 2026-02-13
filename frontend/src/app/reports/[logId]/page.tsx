@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Calendar, FileText } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from '@/lib/api';
 import type { RawLog } from '@/types';
 
@@ -81,9 +82,11 @@ export default function ReportPage() {
               <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">
                 Executive Summary
               </h2>
-              <p className="text-gray-800 leading-relaxed">
-                {summary}
-              </p>
+              <div className="text-gray-800 leading-relaxed prose prose-sm max-w-none prose-headings:text-gray-700 prose-p:my-1">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {summary}
+                </ReactMarkdown>
+              </div>
             </div>
 
             {/* Main Content (Markdown) */}
