@@ -7,7 +7,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
 import Link from 'next/link';
-import { Send, Mic, MicOff, Loader2, ChevronDown, ChevronUp, Copy, Check, Lightbulb, MessageSquarePlus, Search } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Send, Mic, MicOff, Loader2, ChevronDown, ChevronUp, Copy, Check, Lightbulb, MessageSquarePlus, Search, FileText, ExternalLink } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useRecommendationStore, useConversationStore, rawLogToMessages } from '@/lib/store';
 import type { ChatMessage } from '@/lib/store';
@@ -27,6 +28,7 @@ interface ThoughtStreamProps {
 }
 
 export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStreamProps) {
+  const router = useRouter();
   const [input, setInput] = useState('');
 
   // ── 会話メッセージ & スレッド管理は Zustand ストア（localStorage 永続化） ──
@@ -411,6 +413,7 @@ MINDYARD で思考を整理しました`;
             type: 'assistant',
             content: log.assistant_reply || log.metadata_analysis?.deep_research?.summary || '',
             timestamp: new Date().toISOString(),
+            logId: researchLogId,
             researchSummary: log.metadata_analysis?.deep_research?.summary,
             researchDetails: log.metadata_analysis?.deep_research?.details,
             isResearchCacheHit: log.metadata_analysis?.deep_research?.is_cache_hit,
@@ -790,30 +793,52 @@ MINDYARD で思考を整理しました`;
                 )}
               </div>
             )}
-            <p className="whitespace-pre-wrap">{message.researchSummary || message.content}</p>
-            {message.type === 'assistant' && message.researchDetails && (
-              <details className="mt-2 pt-2 border-t border-gray-200">
-                <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">
-                  詳細を表示
-                </summary>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">
-                  {message.researchDetails}
-                </p>
+            {message.type === 'assistant' && (message.researchDetails || message.researchSummary) ? (
+              /* 調査結果がある場合は「カード」を表示する */
+              <div className="mt-2 p-4 rounded-lg bg-white border border-indigo-200 shadow-sm max-w-md">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg shrink-0">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-gray-800 text-sm mb-1">Deep Research 完了</h3>
+                    <p className="text-xs text-gray-500 line-clamp-2 mb-3">
+                      {message.researchSummary || '調査結果のレポートが生成されました。'}
+                    </p>
+                    <button
+                      onClick={() => router.push(`/reports/${message.logId}`)}
+                      className="flex items-center justify-center gap-2 w-full px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700 transition-colors"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      レポートを読む
+                    </button>
+                  </div>
+                </div>
                 {message.isResearchCacheHit && (
-                  <p className="mt-2 text-xs text-emerald-600">
-                    既存の共有ナレッジを再利用したため、再実行をスキップしました。
+                  <p className="mt-2 text-[10px] text-center text-gray-400">
+                    ※既存のナレッジを活用して生成されました
                   </p>
                 )}
-              </details>
-            )}
-            {message.type === 'assistant' && message.requiresResearchConsent && !message.researchConsentConsumed && !isResearching && !message.researchPlan && (
-              <button
-                onClick={() => handleDeepResearch(message)}
-                className="mt-3 flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-500 text-white text-sm font-medium hover:bg-indigo-600 transition-colors shadow-sm"
-              >
-                <Search className="w-4 h-4" />
-                Deep Research を実行する
-              </button>
+              </div>
+            ) : (
+              <>
+                <p className="whitespace-pre-wrap">{message.content}</p>
+
+                {message.type === 'assistant' && message.requiresResearchConsent && !message.researchConsentConsumed && !isResearching && !message.researchPlan && (
+                  <div className="mt-3 bg-indigo-50 p-3 rounded-lg border border-indigo-100 inline-block">
+                    <p className="text-sm text-indigo-800 font-medium mb-2">
+                      この件について詳細な調査（Deep Research）を行いますか？
+                    </p>
+                    <button
+                      onClick={() => handleDeepResearch(message)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm"
+                    >
+                      <Search className="w-4 h-4" />
+                      Deep Research を開始
+                    </button>
+                  </div>
+                )}
+              </>
             )}
             {message.type === 'assistant' && message.researchPlan && !isResearching && (
               <div className="mt-3 p-4 rounded-lg bg-indigo-50 border border-indigo-200">
