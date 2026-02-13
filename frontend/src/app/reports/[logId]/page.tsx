@@ -91,7 +91,7 @@ export default function ReportPage() {
 
             {/* Main Content (Markdown) */}
             <div className="prose prose-indigo max-w-none">
-              <ReactMarkdown>{content}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
             </div>
           </div>
         </div>
