@@ -1,18 +1,71 @@
 """
 MINDYARD - Serendipity Matcher
 Layer 3: ユーザーが「検索」する前に、関連情報を提示するプッシュ型レコメンデーション
+
+Retrieve & Evaluate パターン:
+1. Broad Retrieval: ベクトル検索で広く候補を集める
+2. LLM Synergy Evaluation: LLMで補完関係（化学反応）を判定する
 """
-from typing import Dict, List, Optional
+import logging
 import uuid
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
-
+from app.core.llm import extract_json_from_text, llm_manager
+from app.core.llm_provider import LLMProvider, LLMUsageRole
 from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer3.knowledge_store import knowledge_store
 
-# デモ用定数
-DEMO_TAG = "demo_flash_team"
-DEMO_TEAM_MIN_MEMBERS = 3
+logger = logging.getLogger(__name__)
+
+# LLM評価をスキップする閾値
+MIN_INPUT_LENGTH_FOR_TEAM = 50  # チーム評価に必要な最低入力文字数
+MIN_CANDIDATES_FOR_TEAM = 3    # チーム評価に必要な最低候補数
+
+# Broad Retrieval パラメータ
+BROAD_SEARCH_LIMIT = 10
+BROAD_SCORE_THRESHOLD = 0.45
+
+SYNERGY_SYSTEM_PROMPT = """\
+あなたは「イノベーション・コーディネーター」です。
+複数の人物のスキルや関心を分析し、異能のFlash Teamを結成する専門家です。
+
+## あなたの使命
+与えられた候補者リストの中から、現在のユーザーの課題を解決できる
+「補完的なチーム」を発見してください。
+
+## 評価基準（重要度順）
+1. **役割の分散**: 「似た者同士」は低評価。以下の3つの役割が揃うほど高評価:
+   - ハッカー（Tech）: 技術的な実装力を持つ人
+   - ヒップスター（Design）: デザイン思考・UX・ユーザー視点を持つ人
+   - ハスラー（Biz）: ビジネス・ドメイン知識・課題定義力を持つ人
+2. **課題解決の具体性**: チームを組むことで、現在のユーザーの課題に対して
+   具体的な解決アプローチが見えること。
+3. **シナジーの存在**: 単に足し合わせるだけでなく、掛け合わせることで
+   新しい価値が生まれる組み合わせであること。
+
+## 出力ルール
+- チーム結成が**可能**な場合のみ、以下のJSON形式で出力してください。
+- チーム結成が**不可能**（候補者が似すぎている、課題が不明瞭など）な場合は、
+  `{"team_found": false}` のみを出力してください。
+
+## JSON出力フォーマット（チーム結成可能な場合）
+```json
+{
+  "team_found": true,
+  "project_name": "プロジェクト名（課題を端的に表す名前）",
+  "reason": "このチームが有効な理由（補完関係の説明、2〜3文）",
+  "members": [
+    {
+      "insight_id": "候補者のinsight_id",
+      "display_name": "トピックスから推測される専門分野（例: フロントエンド開発者）",
+      "role": "ハッカー/ヒップスター/ハスラー のいずれか"
+    }
+  ]
+}
+```
+
+必ずJSONのみを出力してください。説明文や前置きは不要です。\
+"""
 
 
 class SerendipityMatcher:
@@ -22,14 +75,23 @@ class SerendipityMatcher:
     機能:
     - 入力中のテキストからリアルタイムで関連インサイトを検索
     - 控えめな「副作用的」レコメンデーション
-    - ユーザーの文脈に基づいたパーソナライズ
-    - デモ用Flash Team Formation バイパス
+    - LLMによるチームシナジー評価（Retrieve & Evaluate パターン）
     """
 
     def __init__(self):
         self.min_content_length = 20  # 最低限必要な文字数
         self.recommendation_limit = 3  # 推奨表示数
-        self.score_threshold = 0.65  # 類似度閾値（やや緩め）
+        self.score_threshold = 0.65  # 通常検索の類似度閾値
+        self._llm_provider: Optional[LLMProvider] = None
+
+    def _get_llm_provider(self) -> Optional[LLMProvider]:
+        """LLMプロバイダーを取得（遅延初期化）"""
+        if self._llm_provider is None:
+            try:
+                self._llm_provider = llm_manager.get_client(LLMUsageRole.BALANCED)
+            except Exception:
+                logger.warning("LLM provider not available for synergy evaluation")
+        return self._llm_provider
 
     async def find_related_insights(
         self,
@@ -42,7 +104,7 @@ class SerendipityMatcher:
 
         Args:
             current_input: ユーザーが入力中のテキスト
-            user_id: ユーザーID（パーソナライズ用、将来実装）
+            user_id: ユーザーID（パーソナライズ用）
             exclude_ids: 除外するインサイトID
 
         Returns:
@@ -52,39 +114,54 @@ class SerendipityMatcher:
                 "trigger_reason": str,
             }
         """
-        # --- Demo bypass: Flash Team Formation ---
-        team_proposal = await self._check_flash_team(user_id)
-        if team_proposal:
-            return team_proposal
+        stripped_input = current_input.strip()
 
         # 最低文字数チェック
-        if len(current_input.strip()) < self.min_content_length:
+        if len(stripped_input) < self.min_content_length:
             return {
                 "has_recommendations": False,
                 "recommendations": [],
                 "trigger_reason": "insufficient_content",
             }
 
-        # 類似インサイトを検索
+        # コンテキスト解析
         current_context = await context_analyzer.analyze(current_input)
         filter_tags = self._build_filter_tags(current_context)
 
-        similar_insights = await knowledge_store.search_similar(
+        # --- Step 1: Broad Retrieval (広域探索) ---
+        broad_candidates = await knowledge_store.search_similar(
             query=current_input,
-            limit=self.recommendation_limit + len(exclude_ids or []),
-            score_threshold=self.score_threshold,
+            limit=BROAD_SEARCH_LIMIT,
+            score_threshold=BROAD_SCORE_THRESHOLD,
             filter_tags=filter_tags,
         )
 
         # 除外IDをフィルタリング
         if exclude_ids:
-            similar_insights = [
-                insight for insight in similar_insights
-                if insight.get("insight_id") not in exclude_ids
+            broad_candidates = [
+                c for c in broad_candidates
+                if c.get("insight_id") not in exclude_ids
             ]
 
-        # 推奨数に制限
-        recommendations = similar_insights[: self.recommendation_limit]
+        # --- Step 2: LLM Synergy Evaluation (シナジー判定) ---
+        # ガード節: 入力が短い or 候補が少なすぎる場合はLLM評価をスキップ
+        if (
+            len(stripped_input) >= MIN_INPUT_LENGTH_FOR_TEAM
+            and len(broad_candidates) >= MIN_CANDIDATES_FOR_TEAM
+        ):
+            team_proposal = await self._evaluate_team_synergy(
+                current_input=stripped_input,
+                candidates=broad_candidates,
+            )
+            if team_proposal:
+                return team_proposal
+
+        # --- Fallback: 通常の類似検索結果を返す ---
+        # 通常閾値でフィルタリング
+        recommendations = [
+            c for c in broad_candidates
+            if c.get("score", 0) >= self.score_threshold
+        ][:self.recommendation_limit]
 
         if not recommendations:
             return {
@@ -93,7 +170,6 @@ class SerendipityMatcher:
                 "trigger_reason": "no_matches",
             }
 
-        # 推奨メッセージの生成
         formatted_recommendations = [
             self._format_recommendation(rec) for rec in recommendations
         ]
@@ -105,130 +181,158 @@ class SerendipityMatcher:
             "display_message": self._generate_display_message(len(recommendations)),
         }
 
-    async def _check_flash_team(
-        self, current_user_id: Optional[uuid.UUID] = None
+    async def _evaluate_team_synergy(
+        self,
+        current_input: str,
+        candidates: List[Dict],
     ) -> Optional[Dict]:
         """
-        デモ用Flash Team Formationバイパス
+        LLMを用いてチームシナジーを評価する
 
-        InsightCard の keywords (tags) に DEMO_TAG が含まれるレコードを検索し、
-        異なるユーザーが3名以上存在する場合に TEAM_PROPOSAL を生成する。
+        Args:
+            current_input: ユーザーの入力テキスト
+            candidates: Broad Retrieval で取得した候補リスト
 
-        通常のマッチングロジックには影響しない。
+        Returns:
+            TEAM_PROPOSAL レコメンデーション辞書、またはチーム不成立時は None
         """
-        from app.db.base import async_session_maker
-        from app.models.insight import InsightCard, InsightStatus
-
-        try:
-            async with async_session_maker() as session:
-                # demo_flash_team タグを持つ公開済みインサイトを検索
-                stmt = (
-                    select(InsightCard)
-                    .where(
-                        InsightCard.status == InsightStatus.APPROVED,
-                        InsightCard.tags.any(DEMO_TAG),
-                    )
-                )
-                result = await session.execute(stmt)
-                demo_insights = result.scalars().all()
-
-                if not demo_insights:
-                    return None
-
-                # 異なるユーザーでグルーピング
-                user_insights: Dict[str, List] = {}
-                for insight in demo_insights:
-                    uid = str(insight.author_id)
-                    if uid not in user_insights:
-                        user_insights[uid] = []
-                    user_insights[uid].append(insight)
-
-                # 現在のユーザーを除外してカウント
-                other_user_ids = [
-                    uid for uid in user_insights
-                    if current_user_id is None or uid != str(current_user_id)
-                ]
-
-                if len(other_user_ids) < DEMO_TEAM_MIN_MEMBERS:
-                    return None
-
-                # 3名を選出（先頭3名）
-                selected_user_ids = other_user_ids[:DEMO_TEAM_MIN_MEMBERS]
-
-                # 各メンバーの代表インサイトからプロフィールを構築
-                team_members = []
-                all_topics: List[str] = []
-                roles = ["エンジニア", "デザイナー", "ドメインエキスパート"]
-
-                for i, uid in enumerate(selected_user_ids):
-                    representative = user_insights[uid][0]
-                    member_topics = representative.topics or []
-                    all_topics.extend(member_topics)
-
-                    # ユーザー情報を取得
-                    from app.models.user import User
-                    user_stmt = select(User).where(User.id == uuid.UUID(uid))
-                    user_result = await session.execute(user_stmt)
-                    user = user_result.scalar_one_or_none()
-
-                    team_members.append({
-                        "user_id": uid,
-                        "display_name": (
-                            user.display_name if user and user.display_name
-                            else f"メンバー {i + 1}"
-                        ),
-                        "role": roles[i] if i < len(roles) else "メンバー",
-                        "avatar_url": user.avatar_url if user else None,
-                    })
-
-                # ユニークなトピックスを集約
-                unique_topics = list(dict.fromkeys(all_topics))[:5]
-
-                # プロジェクト名を生成
-                project_name = self._generate_project_name(unique_topics)
-
-                # TEAM_PROPOSAL Recommendation を構築
-                proposal_id = str(uuid.uuid4())
-                recommendation = {
-                    "id": proposal_id,
-                    "title": "Flash Team が結成可能です",
-                    "summary": (
-                        f"{len(team_members)}名の専門家が見つかりました。"
-                        "異なる視点を持つメンバーによる最適なチームを提案します。"
-                    ),
-                    "topics": unique_topics,
-                    "relevance_score": 95,
-                    "preview": (
-                        "技術 × デザイン × 課題 の最適な組み合わせが見つかりました。"
-                        "AIが分析した結果、このチームは高い相乗効果が期待できます。"
-                    ),
-                    "category": "TEAM_PROPOSAL",
-                    "reason": (
-                        "技術 × デザイン × 課題 の最適な組み合わせが見つかりました。"
-                        "それぞれの専門領域が補完し合い、"
-                        "プロジェクトの成功確率を最大化します。"
-                    ),
-                    "team_members": team_members,
-                    "project_name": project_name,
-                }
-
-                return {
-                    "has_recommendations": True,
-                    "recommendations": [recommendation],
-                    "trigger_reason": "flash_team_formed",
-                    "display_message": "あなたに最適なチームが見つかりました",
-                }
-
-        except Exception:
-            # DB 接続エラー等はスキップして通常フローに戻す
+        provider = self._get_llm_provider()
+        if not provider:
             return None
 
-    def _generate_project_name(self, topics: List[str]) -> str:
-        """トピックスからプロジェクト名を生成"""
-        if not topics:
-            return "Flash Team Project"
-        topic_str = " × ".join(topics[:3])
-        return f"{topic_str} プロジェクト"
+        # 候補情報をプロンプト用にフォーマット
+        candidates_text = self._format_candidates_for_prompt(candidates)
+
+        user_prompt = f"""\
+## 現在のユーザーの入力（課題・関心）
+{current_input}
+
+## 候補者リスト（ベクトル検索で発見された関連インサイト）
+{candidates_text}
+
+上記の候補者から、現在のユーザーの課題を解決できる補完的なチームを
+結成できるか判定してください。"""
+
+        try:
+            await provider.initialize()
+            result = await provider.generate_json(
+                messages=[
+                    {"role": "system", "content": SYNERGY_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.4,
+            )
+
+            return self._parse_team_response(result, candidates)
+
+        except Exception:
+            # JSON パース失敗時は extract_json_from_text でリトライ
+            try:
+                response = await provider.generate_text(
+                    messages=[
+                        {"role": "system", "content": SYNERGY_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.4,
+                )
+                parsed = extract_json_from_text(response.content)
+                if parsed:
+                    return self._parse_team_response(parsed, candidates)
+            except Exception:
+                logger.warning("LLM synergy evaluation failed", exc_info=True)
+
+            return None
+
+    def _format_candidates_for_prompt(self, candidates: List[Dict]) -> str:
+        """候補リストをLLMプロンプト用テキストに変換"""
+        lines = []
+        for i, c in enumerate(candidates, 1):
+            topics = ", ".join(c.get("topics", [])) or "なし"
+            lines.append(
+                f"{i}. [ID: {c.get('insight_id', 'unknown')}]\n"
+                f"   タイトル: {c.get('title', '不明')}\n"
+                f"   要約: {c.get('summary', '情報なし')}\n"
+                f"   トピックス: {topics}\n"
+                f"   類似度スコア: {c.get('score', 0):.2f}"
+            )
+        return "\n".join(lines)
+
+    def _parse_team_response(
+        self,
+        llm_result: Dict[str, Any],
+        candidates: List[Dict],
+    ) -> Optional[Dict]:
+        """
+        LLMレスポンスを解析し、TEAM_PROPOSAL レコメンデーションを構築する
+
+        Args:
+            llm_result: LLMが返したJSONオブジェクト
+            candidates: 元の候補リスト（追加情報の補完用）
+
+        Returns:
+            TEAM_PROPOSAL 形式のレコメンデーション辞書、またはチーム不成立時は None
+        """
+        if not llm_result.get("team_found"):
+            return None
+
+        members_raw = llm_result.get("members", [])
+        if not members_raw:
+            return None
+
+        # 候補のinsight_id → 詳細情報のマップ
+        candidate_map = {
+            c.get("insight_id"): c for c in candidates
+        }
+
+        team_members = []
+        all_topics: List[str] = []
+
+        for member in members_raw:
+            insight_id = member.get("insight_id", "")
+            candidate = candidate_map.get(insight_id, {})
+            member_topics = candidate.get("topics", [])
+            all_topics.extend(member_topics)
+
+            team_members.append({
+                "user_id": insight_id,
+                "display_name": member.get("display_name", "メンバー"),
+                "role": member.get("role", "メンバー"),
+                "avatar_url": None,
+            })
+
+        if not team_members:
+            return None
+
+        unique_topics = list(dict.fromkeys(all_topics))[:5]
+        project_name = llm_result.get("project_name", "Flash Team Project")
+        reason = llm_result.get(
+            "reason",
+            "異なる専門領域を持つメンバーによる補完的なチームです。",
+        )
+
+        proposal_id = str(uuid.uuid4())
+        recommendation = {
+            "id": proposal_id,
+            "title": "Flash Team が結成可能です",
+            "summary": (
+                f"{len(team_members)}名の専門家が見つかりました。"
+                "異なる視点を持つメンバーによる最適なチームを提案します。"
+            ),
+            "topics": unique_topics,
+            "relevance_score": 90,
+            "preview": reason,
+            "category": "TEAM_PROPOSAL",
+            "reason": reason,
+            "team_members": team_members,
+            "project_name": project_name,
+        }
+
+        return {
+            "has_recommendations": True,
+            "recommendations": [recommendation],
+            "trigger_reason": "flash_team_formed",
+            "display_message": "あなたに最適なチームが見つかりました",
+        }
 
     def _format_recommendation(self, insight: Dict) -> Dict:
         """推奨インサイトをUI表示用にフォーマット"""
