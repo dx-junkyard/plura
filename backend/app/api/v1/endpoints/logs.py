@@ -24,8 +24,13 @@ from app.schemas.raw_log import (
     DeepResearchInfo,
 )
 from app.services.layer1.context_analyzer import context_analyzer
-from app.services.layer1.conversation_agent import conversation_agent
 from app.services.layer1.situation_router import situation_router
+from app.services.layer1.conversation_graph import run_conversation
+from app.services.layer1.conversation_context import (
+    load_thread_history,
+    search_collective_wisdom,
+    get_profile_summary,
+)
 from app.workers.tasks import analyze_log_structure, process_log_for_insight, deep_research_task, update_user_profile
 from app.core.config import settings
 
@@ -39,6 +44,52 @@ _DEEP_RESEARCH_KEYWORDS = re.compile(
 )
 
 router = APIRouter()
+
+
+def _build_situation_hint(situation) -> Optional[str]:
+    """SituationRouter の結果からLLMに渡すヒント文を生成"""
+    st = situation.situation_type
+    topic = situation.resolved_topic
+
+    if st == "continuation":
+        return (
+            "相手は前の話題の「続き」を希望しています。"
+            "履歴にある話題の具体的な内容を踏まえて、前回の会話を発展させてください。"
+        )
+    elif st == "imperative":
+        return (
+            f"相手は「{topic}」に関して行動・実行を指示しています。"
+            f"履歴に具体的な計画や内容があるはずです。それを踏まえて、"
+            f"次の具体的なアクションステップを提示してください。"
+            f"「何を作成しますか？」のような聞き返しは絶対に禁止。"
+        )
+    elif st == "correction":
+        return (
+            "相手は直前の問いを訂正・否定しています。"
+            "素直に受け入れ、全く別の切り口から問いかけてください。"
+        )
+    elif st == "criticism_then_topic":
+        return (
+            f"相手は批判の後に本題「{topic}」を出しています。"
+            f"批判には「なるほど」程度で、本題に関する具体的な知識を提示してください。"
+        )
+    elif st == "topic_switch":
+        return (
+            f"相手は新しい話題「{topic}」に切り替えたいようです。"
+            f"「{topic}」に関する具体的な概念や最新の動向に触れながら、自然に話に乗ってください。"
+        )
+    elif st == "vent":
+        return (
+            "相手は感情を吐き出しています。"
+            "まず気持ちを受け止めること。解決策やアドバイスは絶対に言わない。"
+        )
+    elif st == "same_topic_short":
+        return (
+            f"相手は前の話題（{topic}）について短く言及しています。"
+            f"まだ掘り下げていない角度から話を広げてください。"
+        )
+    return None
+
 
 # OpenAI クライアント（Whisper用）
 _openai_client = None
@@ -165,22 +216,41 @@ async def create_log(
             or prev_log.structural_analysis.get("structural_issue")
         )
 
-    # 状況をコードで分類し、会話エージェントに渡す
+    # 状況をコードで分類
     situation = situation_router.classify(log_in.content, previous_topic)
 
-    # 会話ラリー用の自然な返答を生成（スレッド履歴 + 状況）
+    # ── LangGraph 統合: コンテキストを準備して会話グラフを実行 ──
     conversation_reply = None
     try:
-        conversation_reply = await conversation_agent.generate_reply(
-            session, current_user.id, log, situation=situation
+        # コンテキスト読み込み（履歴・みんなの知恵・プロファイル）
+        thread_history = await load_thread_history(
+            session, current_user.id, log.id,
+            thread_id=getattr(log, "thread_id", None),
         )
+        collective_wisdom = await search_collective_wisdom(log_in.content)
+        profile_summary = await get_profile_summary(session, current_user.id)
+
+        # 状況ヒントを生成
+        situation_hint = _build_situation_hint(situation) if situation else None
+
+        # LangGraph 実行
+        graph_result = await run_conversation(
+            input_text=log_in.content,
+            user_id=str(current_user.id),
+            thread_history=thread_history,
+            collective_wisdom=collective_wisdom,
+            user_profile_summary=profile_summary,
+            situation_hint=situation_hint,
+        )
+        conversation_reply = graph_result.response
+
         if conversation_reply:
             log.assistant_reply = conversation_reply
             await session.commit()
     except Exception as e:
-        logger.warning("create_log: conversation_agent failed: %s", e, exc_info=True)
+        logger.warning("create_log: LangGraph conversation failed: %s", e, exc_info=True)
     if conversation_reply is None:
-        logger.info("create_log: conversation_reply not generated (BALANCED LLM / OPENAI_API_KEY may be missing)")
+        logger.info("create_log: conversation_reply not generated (LLM may be unavailable)")
 
     # ── Deep Research トリガー判定 ──
     # 探究心が高い（STRUCTURE intent）or 明示的なキーワードを含む場合にキック
@@ -444,13 +514,27 @@ async def transcribe_audio(
         except Exception:
             pass
 
-        # 会話ラリー用の自然な返答を生成（音声は状況なしで履歴のみ）
+        # ── LangGraph 統合: 音声入力もグラフ経由で応答 ──
         conversation_reply = None
         try:
             situation = situation_router.classify(transcribed_text, None)
-            conversation_reply = await conversation_agent.generate_reply(
-                session, current_user.id, log, situation=situation
+            thread_history = await load_thread_history(
+                session, current_user.id, log.id,
+                thread_id=getattr(log, "thread_id", None),
             )
+            collective_wisdom = await search_collective_wisdom(transcribed_text)
+            profile_summary = await get_profile_summary(session, current_user.id)
+            situation_hint = _build_situation_hint(situation) if situation else None
+
+            graph_result = await run_conversation(
+                input_text=transcribed_text,
+                user_id=str(current_user.id),
+                thread_history=thread_history,
+                collective_wisdom=collective_wisdom,
+                user_profile_summary=profile_summary,
+                situation_hint=situation_hint,
+            )
+            conversation_reply = graph_result.response
             if conversation_reply:
                 log.assistant_reply = conversation_reply
                 await session.commit()

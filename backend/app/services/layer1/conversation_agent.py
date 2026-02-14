@@ -1,12 +1,13 @@
 """
-MINDYARD - Conversation Agent
+MINDYARD - Conversation Agent (DEPRECATED)
 Layer 1: 自然な人間らしい会話返答を生成する
 
-ai-agent-playground-101 方式: シンプルなプロンプト + 会話履歴 → 自然な応答
-ルールは最小限にし、LLM の自然な対話能力に任せる。
+⚠️ DEPRECATED: このモジュールは LangGraph 統合により非推奨です。
+新しい会話生成は conversation_graph.py + 各ノード (nodes/) が担当します。
+コンテキスト読み込みユーティリティは conversation_context.py に移設済み。
 
-Layer 3 連携: 会話中にQdrant（みんなの知恵）を検索し、
-関連するインサイトがあれば自然な会話の中で言及する。
+このファイルはフォールバック用途として残していますが、
+新規開発では conversation_graph.run_conversation() を使用してください。
 """
 import logging
 from typing import Optional, List, Tuple, Dict, TYPE_CHECKING

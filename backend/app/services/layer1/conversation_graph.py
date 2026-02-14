@@ -45,7 +45,7 @@ from typing import TypedDict
 
 
 class AgentState(TypedDict, total=False):
-    """会話グラフの共有ステート（仮説駆動型拡張）"""
+    """会話グラフの共有ステート（仮説駆動型拡張 + コンテキスト統合）"""
     input_text: str
     intent: str
     confidence: float
@@ -60,6 +60,11 @@ class AgentState(TypedDict, total=False):
     previous_evaluation: Optional[str]   # 前回インタラクションの評価
     reasoning: Optional[str]             # ルーターの判断根拠
     alternative_intent: Optional[str]    # 僅差だった場合の第2候補（補足ヒント用）
+    # ── コンテキスト統合フィールド（/logs/ 統合用） ──
+    thread_history: Optional[List[tuple]]        # [(user_content, assistant_reply), ...]
+    collective_wisdom: Optional[List[Dict[str, Any]]]  # Qdrant 検索結果
+    user_profile_summary: Optional[str]          # ユーザープロファイル要約
+    situation_hint: Optional[str]                # SituationRouter のヒント文
 
 
 # --- Node Functions ---
@@ -450,6 +455,11 @@ async def run_conversation(
     mode_override: Optional[str] = None,
     previous_intent: Optional[str] = None,
     previous_response: Optional[str] = None,
+    # ── コンテキスト統合（/logs/ 統合用） ──
+    thread_history: Optional[List[tuple]] = None,
+    collective_wisdom: Optional[List[Dict[str, Any]]] = None,
+    user_profile_summary: Optional[str] = None,
+    situation_hint: Optional[str] = None,
 ) -> ConversationResponse:
     """
     会話グラフを実行し、ConversationResponse を返す
@@ -460,6 +470,10 @@ async def run_conversation(
         mode_override: モード強制上書き（Mode Switcher）
         previous_intent: 前回の意図（仮説検証用）
         previous_response: 前回のAI回答（仮説検証用）
+        thread_history: スレッド内の会話履歴 [(user_content, assistant_reply), ...]
+        collective_wisdom: Qdrant から取得した関連インサイト
+        user_profile_summary: ユーザープロファイル要約テキスト
+        situation_hint: SituationRouter による状況ヒント文
 
     Returns:
         ConversationResponse（即時回答 + Intent Badge + 非同期タスク情報）
@@ -470,6 +484,9 @@ async def run_conversation(
             "input_preview": input_text[:80],
             "user_id": user_id,
             "mode_override": mode_override,
+            "has_thread_history": thread_history is not None and len(thread_history or []) > 0,
+            "has_collective_wisdom": collective_wisdom is not None and len(collective_wisdom or []) > 0,
+            "has_profile": user_profile_summary is not None,
         },
     )
     conv_start = time.monotonic()
@@ -489,6 +506,11 @@ async def run_conversation(
         "previous_evaluation": None,
         "reasoning": None,
         "alternative_intent": None,
+        # コンテキスト統合
+        "thread_history": thread_history,
+        "collective_wisdom": collective_wisdom,
+        "user_profile_summary": user_profile_summary,
+        "situation_hint": situation_hint,
     }
 
     # グラフ実行
