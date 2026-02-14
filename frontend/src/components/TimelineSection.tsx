@@ -150,6 +150,11 @@ export function TimelineSection({ selectedLogId, onSelectLog }: TimelineSectionP
                 const root = logs[0];
                 const isSelected = selectedLogId === root.id;
                 const count = logs.length;
+                // スレッド内の最新の構造的課題を取得（振り返りの要約表示用）
+                const latestStructuralIssue = [...logs]
+                  .reverse()
+                  .find((l) => l.structural_analysis?.updated_structural_issue)
+                  ?.structural_analysis?.updated_structural_issue;
                 return (
                   <li key={threadKey} className="group relative">
                     <button
@@ -162,9 +167,15 @@ export function TimelineSection({ selectedLogId, onSelectLog }: TimelineSectionP
                           : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50/50'
                       )}
                     >
-                      <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
-                        {root.content}
-                      </p>
+                      {latestStructuralIssue ? (
+                        <p className="text-sm text-gray-800 line-clamp-2 font-medium">
+                          {latestStructuralIssue}
+                        </p>
+                      ) : (
+                        <p className="text-sm text-gray-800 whitespace-pre-wrap line-clamp-3">
+                          {root.content}
+                        </p>
+                      )}
                       {count > 1 && (
                         <p className="text-xs text-gray-500 mt-1">
                           {count}件のやりとり
