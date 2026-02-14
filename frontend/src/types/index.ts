@@ -21,7 +21,7 @@ export interface Token {
 }
 
 // Log Intent
-export type LogIntent = 'log' | 'vent' | 'structure' | 'state';
+export type LogIntent = 'log' | 'vent' | 'structure' | 'state' | 'deep_research';
 
 // Model Info
 export interface ModelInfo {
@@ -51,6 +51,20 @@ export interface RawLog {
   emotion_scores: Record<string, number> | null;
   topics: string[] | null;
   structural_analysis: StructuralAnalysis | null;
+  metadata_analysis: {
+    deep_research?: {
+      title?: string;
+      topic?: string;
+      scope?: string;
+      perspectives?: string[];
+      summary?: string;
+      details?: string;
+      requested_by_user_id?: string;
+      is_cache_hit?: boolean;
+      cached_insight_id?: string | null;
+    };
+    [key: string]: unknown;
+  } | null;
   assistant_reply: string | null;  // 会話エージェントの自然言語返答
   is_analyzed: boolean;
   is_processed_for_insight: boolean;
@@ -66,12 +80,6 @@ export interface RawLogListResponse {
   page_size: number;
 }
 
-export interface DeepResearchInfo {
-  task_id: string;
-  status: string;
-  message: string;
-}
-
 export interface AckResponse {
   message: string;
   log_id: string;
@@ -80,20 +88,8 @@ export interface AckResponse {
   transcribed_text?: string;  // 音声入力時の文字起こしテキスト
   skip_structural_analysis?: boolean;
   conversation_reply?: string; // 会話エージェントが生成した自然な返答（ラリー用）
-  deep_research?: DeepResearchInfo | null;  // Deep Research タスク情報
-}
-
-export interface TaskStatusResponse {
-  task_id: string;
-  status: string;  // PENDING, STARTED, SUCCESS, FAILURE
-  result?: {
-    status: string;
-    report?: string;
-    query?: string;
-    log_id?: string;
-    [key: string]: unknown;
-  };
-  error?: string;
+  requires_research_consent?: boolean; // Deep Research の提案が含まれている場合 true
+  research_log_id?: string; // Deep Research 結果のポーリング先ログID
 }
 
 // Insight Card (Layer 3)
@@ -132,7 +128,7 @@ export interface SharingProposal {
 }
 
 // Conversation (LangGraph Hypothesis-Driven Routing)
-export type ConversationIntent = 'chat' | 'empathy' | 'knowledge' | 'deep_dive' | 'brainstorm' | 'probe';
+export type ConversationIntent = 'chat' | 'empathy' | 'knowledge' | 'deep_dive' | 'brainstorm' | 'probe' | 'state_share';
 
 export type PreviousEvaluation = 'positive' | 'negative' | 'pivot' | 'none';
 
@@ -160,11 +156,24 @@ export interface BackgroundTask {
   task_type: string;
   status: BackgroundTaskStatus;
   message: string;
+  result_log_id?: string; // 結果が保存される RawLog の ID（ポーリング用）
+}
+
+export interface ResearchPlan {
+  title: string;
+  topic: string;
+  scope: string;
+  perspectives: string[];
+  sanitized_query: string;
 }
 
 export interface ConversationRequest {
   message: string;
   mode_override?: ConversationIntent;
+  research_approved?: boolean; // 提案フェーズ開始
+  research_plan_confirmed?: boolean; // 調査計画確定で実行開始
+  research_plan?: ResearchPlan; // 確認済みの調査計画書
+  thread_id?: string; // 会話スレッドID
 }
 
 export interface ConversationResponse {
@@ -173,6 +182,9 @@ export interface ConversationResponse {
   background_task: BackgroundTask | null;
   user_id: string;
   timestamp: string;
+  requires_research_consent?: boolean; // Deep Research の提案が含まれている場合 true
+  is_researching?: boolean; // Deep Research が非同期実行中の場合 true
+  research_plan?: ResearchPlan | null; // 調査計画書（ユーザー確認待ち）
 }
 
 // Recommendations

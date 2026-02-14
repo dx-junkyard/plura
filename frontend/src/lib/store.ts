@@ -4,7 +4,7 @@
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { User, RecommendationItem, RawLog } from '@/types';
+import type { User, RecommendationItem, RawLog, ResearchPlan } from '@/types';
 
 interface AuthState {
   user: User | null;
@@ -86,6 +86,12 @@ export interface ChatMessage {
     model_info?: { tier: string; model: string; is_reasoning: boolean };
   };
   isVoiceInput?: boolean;
+  requiresResearchConsent?: boolean; // Deep Research 提案フラグ
+  researchConsentConsumed?: boolean; // Deep Research 提案を実行済み（再実行防止）
+  researchPlan?: ResearchPlan; // 調査計画書（ユーザー確認待ち）
+  researchSummary?: string; // Deep Research 結果の概要
+  researchDetails?: string; // Deep Research 結果の詳細
+  isResearchCacheHit?: boolean; // 既存ナレッジ再利用フラグ
 }
 
 /** RawLog → ChatMessage[] 変換（バックエンドのログを会話メッセージに復元） */
@@ -109,6 +115,9 @@ export function rawLogToMessages(log: RawLog): ChatMessage[] {
     content: log.assistant_reply || '受け取りました。',
     timestamp: log.created_at,
     logId: log.id,
+    researchSummary: log.metadata_analysis?.deep_research?.summary,
+    researchDetails: log.metadata_analysis?.deep_research?.details,
+    isResearchCacheHit: log.metadata_analysis?.deep_research?.is_cache_hit,
   });
 
   // 3. 構造分析の深掘り問い（あれば）

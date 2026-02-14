@@ -37,6 +37,7 @@ dist/
 .next/
 out/
 *.egg-info/
+*.tsbuildinfo
 
 # Logs
 logs/

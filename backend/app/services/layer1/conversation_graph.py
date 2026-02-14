@@ -23,6 +23,7 @@ from app.schemas.conversation import (
     IntentBadge,
     IntentHypothesis,
     BackgroundTask,
+    ResearchPlan,
     PreviousEvaluation,
     INTENT_DISPLAY_MAP,
 )
@@ -34,6 +35,8 @@ from app.services.layer1.nodes import (
     run_deep_dive_node,
     run_brainstorm_node,
     run_state_node,
+    run_deep_research_node,
+    run_research_proposal_node,
 )
 
 logger = get_traced_logger("Graph")
@@ -65,6 +68,12 @@ class AgentState(TypedDict, total=False):
     collective_wisdom: Optional[List[Dict[str, Any]]]  # Qdrant 検索結果
     user_profile_summary: Optional[str]          # ユーザープロファイル要約
     situation_hint: Optional[str]                # SituationRouter のヒント文
+    # Deep Research フロー
+    requires_research_consent: Optional[bool]  # リサーチ提案が必要な場合 True
+    research_approved: Optional[bool]          # ユーザーがリサーチ提案フェーズを開始した場合 True
+    research_plan: Optional[Dict[str, Any]]    # 調査計画書（research_proposal_node で生成）
+    research_plan_confirmed: Optional[bool]    # 調査計画が確定された場合 True
+    thread_id: Optional[str]                   # 会話スレッドID
 
 
 # --- Node Functions ---
@@ -213,11 +222,106 @@ async def _traced_node_wrapper(
     return result
 
 
+# --- Deep Research 判定 ---
+
+# ユーザー入力にこれらのキーワードが含まれる場合、LLM判定を経ずに強制的にリサーチを提案する
+_RESEARCH_TRIGGER_KEYWORDS = [
+    "詳しく調べて", "リサーチ", "詳細希望", "deep research", "調査して",
+    "深掘り", "もっと詳しく", "裏付け", "エビデンス", "論文",
+    "データ", "最新情報", "調べて", "根拠", "ファクトチェック",
+]
+
+_RESEARCH_ASSESSMENT_PROMPT = """以下のユーザーの質問と、それに対する回答を読んでください。
+回答の後にさらに専門的な調査（論文・統計・最新ニュース・複数ソースの横断調査等）を行えば
+ユーザーにとってプラスになるかどうかを判定してください。
+
+★最重要ルール: 少しでも専門的な調査の余地がある場合は必ず true を返してください。
+  迷ったら true です。false にしてよいのは「完全に雑談だけ」の場合のみです。
+
+判定基準（1つでも当てはまれば true）:
+- トピックに事実・数値・比較・歴史的背景・最新動向が関係しうる → true
+- 回答に「〜と言われています」「一般的には」「おそらく」等の曖昧表現がある → true
+- ユーザーが何かを学びたい・解決したい・確認したい意図を持っている → true
+- 社会・技術・ビジネス・科学・健康・法律に少しでも関連する → true
+- 単純な挨拶（おはよう等）や感情の吐露のみで事実情報が不要 → false
+
+JSON で返してください:
+{"should_propose_research": true, "reason": "..."}"""
+
+
+def _has_research_trigger_keyword(text: str) -> bool:
+    """ユーザー入力にリサーチ強制トリガーキーワードが含まれるか判定"""
+    text_lower = text.lower()
+    return any(kw in text_lower for kw in _RESEARCH_TRIGGER_KEYWORDS)
+
+
+async def _assess_research_value(
+    input_text: str, response_text: str
+) -> bool:
+    """回答内容がさらに深いリサーチの価値があるかを判定
+
+    1. キーワードマッチで強制トリガー
+    2. LLM による自動判定（プロンプトは積極的に true を返す方針）
+    """
+    # 1. キーワードによる強制トリガー
+    if _has_research_trigger_keyword(input_text):
+        _node_logger.info(
+            "Research assessment: keyword trigger matched",
+            metadata={"input_preview": input_text[:80]},
+        )
+        return True
+
+    # 2. LLM による判定
+    try:
+        provider = llm_manager.get_client(LLMUsageRole.FAST)
+        if not provider:
+            return False
+        await provider.initialize()
+        result = await provider.generate_json(
+            messages=[
+                {"role": "system", "content": _RESEARCH_ASSESSMENT_PROMPT},
+                {
+                    "role": "user",
+                    "content": f"ユーザーの入力:\n{input_text}\n\nAIの回答:\n{response_text}",
+                },
+            ],
+            temperature=0.3,
+        )
+        should_propose = bool(result.get("should_propose_research", False))
+        _node_logger.info(
+            "Research assessment",
+            metadata={
+                "should_propose": should_propose,
+                "reason": result.get("reason", ""),
+            },
+        )
+        return should_propose
+    except Exception as e:
+        _node_logger.warning(
+            "Research assessment failed",
+            metadata={"error": str(e)},
+        )
+        return False
+
+
+_RESEARCH_PROPOSAL_SUFFIX = (
+    "\n\n---\nこのトピックについて、さらに詳しく調査することもできます。"
+    "Deep Research を実行しますか？"
+)
+
+
 async def chat_node(state: AgentState) -> AgentState:
     """Chit-Chat Node ラッパー"""
     result = await _traced_node_wrapper("ChatNode", run_chat_node, state)
     response = _append_fallback_hint(result["response"], state.get("alternative_intent"))
-    return {"response": response}
+    # chat_node 内部で判定済みの requires_research_consent を優先使用
+    requires_consent = result.get("requires_research_consent", False)
+    if not requires_consent:
+        # ノード内部で判定できなかった場合のフォールバック（グラフ側判定）
+        requires_consent = await _assess_research_value(state.get("input_text", ""), response)
+    if requires_consent:
+        response += _RESEARCH_PROPOSAL_SUFFIX
+    return {"response": response, "requires_research_consent": requires_consent}
 
 
 async def empathy_node(state: AgentState) -> AgentState:
@@ -234,6 +338,11 @@ async def knowledge_node(state: AgentState) -> AgentState:
     update: Dict[str, Any] = {"response": response}
     if result.get("background_task_info"):
         update["background_task_info"] = result["background_task_info"]
+    # Deep Research 判定
+    requires_consent = await _assess_research_value(state.get("input_text", ""), response)
+    if requires_consent:
+        update["response"] = response + _RESEARCH_PROPOSAL_SUFFIX
+    update["requires_research_consent"] = requires_consent
     return update
 
 
@@ -241,7 +350,11 @@ async def deep_dive_node(state: AgentState) -> AgentState:
     """Deep-Dive Node ラッパー"""
     result = await _traced_node_wrapper("DeepDiveNode", run_deep_dive_node, state)
     response = _append_fallback_hint(result["response"], state.get("alternative_intent"))
-    return {"response": response}
+    # Deep Research 判定
+    requires_consent = await _assess_research_value(state.get("input_text", ""), response)
+    if requires_consent:
+        response += _RESEARCH_PROPOSAL_SUFFIX
+    return {"response": response, "requires_research_consent": requires_consent}
 
 
 async def brainstorm_node(state: AgentState) -> AgentState:
@@ -255,6 +368,28 @@ async def state_share_node(state: AgentState) -> AgentState:
     """State Share Node ラッパー（コンディション記録）"""
     result = await _traced_node_wrapper("StateNode", run_state_node, state)
     return {"response": result["response"]}
+
+
+async def research_proposal_node(state: AgentState) -> AgentState:
+    """Research Proposal Node ラッパー（調査計画書を生成）"""
+    result = await _traced_node_wrapper(
+        "ResearchProposalNode", run_research_proposal_node, state
+    )
+    update: Dict[str, Any] = {"response": result["response"]}
+    if result.get("research_plan"):
+        update["research_plan"] = result["research_plan"]
+    return update
+
+
+async def deep_research_node(state: AgentState) -> AgentState:
+    """Deep Research Node ラッパー（Celery 非同期タスクをキック）"""
+    result = await _traced_node_wrapper(
+        "DeepResearchNode", run_deep_research_node, state
+    )
+    update: Dict[str, Any] = {"response": result["response"]}
+    if result.get("background_task_info"):
+        update["background_task_info"] = result["background_task_info"]
+    return update
 
 
 # --- Probe Node（仮説検証ノード） ---
@@ -384,7 +519,23 @@ async def probe_node(state: AgentState) -> AgentState:
 # --- 条件分岐関数 ---
 
 def decide_next_node(state: AgentState) -> str:
-    """Router の結果に基づいて次のノードを決定"""
+    """Router の結果に基づいて次のノードを決定
+
+    Deep Research 3ステップフロー:
+    1. research_plan_confirmed + research_plan → deep_research（実行）
+    2. research_approved（計画なし）→ research_proposal（計画作成）
+    3. 通常の意図分類 → 各ノード
+    """
+    # Step 3: 計画確定 → Deep Research 実行
+    if state.get("research_plan_confirmed") and state.get("research_plan"):
+        logger.info("Transitioning to deep_research node (plan confirmed)")
+        return "deep_research"
+
+    # Step 1: 提案承認 → 調査計画書作成
+    if state.get("research_approved"):
+        logger.info("Transitioning to research_proposal node (creating plan)")
+        return "research_proposal"
+
     intent = state.get("intent", "chat")
     valid_intents = {"chat", "empathy", "knowledge", "deep_dive", "brainstorm", "probe", "state_share"}
     if intent not in valid_intents:
@@ -412,11 +563,14 @@ def build_app_graph() -> StateGraph:
     workflow.add_node("brainstorm", brainstorm_node)
     workflow.add_node("state_share", state_share_node)
     workflow.add_node("probe", probe_node)
+    workflow.add_node("research_proposal", research_proposal_node)
+    workflow.add_node("deep_research", deep_research_node)
 
     # エントリーポイント
     workflow.set_entry_point("router")
 
     # 条件付きエッジ: router → 各ノード
+    # research_approved の場合は deep_research に直接ルーティング
     workflow.add_conditional_edges(
         "router",
         decide_next_node,
@@ -428,6 +582,8 @@ def build_app_graph() -> StateGraph:
             "brainstorm": "brainstorm",
             "state_share": "state_share",
             "probe": "probe",
+            "research_proposal": "research_proposal",
+            "deep_research": "deep_research",
         },
     )
 
@@ -439,6 +595,8 @@ def build_app_graph() -> StateGraph:
     workflow.add_edge("brainstorm", END)
     workflow.add_edge("state_share", END)
     workflow.add_edge("probe", END)
+    workflow.add_edge("research_proposal", END)
+    workflow.add_edge("deep_research", END)
 
     return workflow.compile()
 
@@ -460,6 +618,11 @@ async def run_conversation(
     collective_wisdom: Optional[List[Dict[str, Any]]] = None,
     user_profile_summary: Optional[str] = None,
     situation_hint: Optional[str] = None,
+    # Deep Research フロー
+    research_approved: bool = False,
+    research_plan_confirmed: bool = False,
+    research_plan: Optional[Dict[str, Any]] = None,
+    thread_id: Optional[str] = None,
 ) -> ConversationResponse:
     """
     会話グラフを実行し、ConversationResponse を返す
@@ -474,6 +637,10 @@ async def run_conversation(
         collective_wisdom: Qdrant から取得した関連インサイト
         user_profile_summary: ユーザープロファイル要約テキスト
         situation_hint: SituationRouter による状況ヒント文
+        research_approved: 提案フェーズ開始の場合 True
+        research_plan_confirmed: 調査計画確定の場合 True
+        research_plan: 確定済み調査計画書データ
+        thread_id: 会話スレッドID（Deep Research の結果保存先）
 
     Returns:
         ConversationResponse（即時回答 + Intent Badge + 非同期タスク情報）
@@ -487,6 +654,9 @@ async def run_conversation(
             "has_thread_history": thread_history is not None and len(thread_history or []) > 0,
             "has_collective_wisdom": collective_wisdom is not None and len(collective_wisdom or []) > 0,
             "has_profile": user_profile_summary is not None,
+            "research_approved": research_approved,
+            "research_plan_confirmed": research_plan_confirmed,
+            "thread_id": thread_id,
         },
     )
     conv_start = time.monotonic()
@@ -511,6 +681,12 @@ async def run_conversation(
         "collective_wisdom": collective_wisdom,
         "user_profile_summary": user_profile_summary,
         "situation_hint": situation_hint,
+        # Deep Research フロー
+        "requires_research_consent": None,
+        "research_approved": research_approved or None,
+        "research_plan": research_plan,
+        "research_plan_confirmed": research_plan_confirmed or None,
+        "thread_id": thread_id,
     }
 
     # グラフ実行
@@ -540,13 +716,31 @@ async def run_conversation(
             task_type=bg_info["task_type"],
             status=bg_info["status"],
             message=bg_info["message"],
+            result_log_id=bg_info.get("result_log_id"),
         )
+
+    is_researching = (
+        background_task is not None
+        and bg_info.get("task_type") == "deep_research"
+    )
+
+    # Research Plan の構造化
+    raw_plan = result.get("research_plan")
+    research_plan_response = None
+    if raw_plan and isinstance(raw_plan, dict):
+        try:
+            research_plan_response = ResearchPlan(**raw_plan)
+        except Exception:
+            pass
 
     conv_response = ConversationResponse(
         response=result.get("response", ""),
         intent_badge=intent_badge,
         background_task=background_task,
         user_id=user_id,
+        requires_research_consent=bool(result.get("requires_research_consent")),
+        is_researching=is_researching,
+        research_plan=research_plan_response,
     )
 
     duration_ms = round((time.monotonic() - conv_start) * 1000, 1)
@@ -556,6 +750,7 @@ async def run_conversation(
             "intent": intent_enum.value,
             "confidence": intent_badge.confidence,
             "has_background_task": background_task is not None,
+            "requires_research_consent": conv_response.requires_research_consent,
             "duration_ms": duration_ms,
         },
     )

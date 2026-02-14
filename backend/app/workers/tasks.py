@@ -4,8 +4,8 @@ Layer 2 の非同期処理タスク
 """
 import asyncio
 import logging
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
 import uuid
 import re
 
@@ -17,14 +17,129 @@ from app.workers.celery_app import celery_app
 from app.db.base import async_session_maker, engine
 from app.models.raw_log import RawLog, LogIntent
 from app.models.insight import InsightCard, InsightStatus
+from app.models.user import User
 from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer2.privacy_sanitizer import privacy_sanitizer
 from app.services.layer2.insight_distiller import insight_distiller
 from app.services.layer2.sharing_broker import sharing_broker
 from app.services.layer2.structural_analyzer import structural_analyzer, is_continuation_phrase
+from app.services.layer3.knowledge_store import knowledge_store
+from app.core.security import get_password_hash
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_SYSTEM_BOT_USER_ID = "00000000-0000-0000-0000-000000000001"
+
+
+def _split_research_report(report: str) -> Tuple[str, str]:
+    """
+    Deep Research レポートを summary / details に分離する。
+    """
+    text = (report or "").strip()
+    if not text:
+        return ("調査結果を取得できませんでした。", "")
+
+    # 「概要」セクションを優先的に抽出
+    heading_pattern = re.compile(r"(?:^|\n)#{0,3}\s*概要[：:\s]*\n?", re.IGNORECASE)
+    heading_match = heading_pattern.search(text)
+    if heading_match:
+        start = heading_match.end()
+        remainder = text[start:]
+        next_heading = re.search(r"\n#{1,6}\s+|\n(?:主要|詳細|結論|次のステップ)", remainder)
+        summary = (remainder[:next_heading.start()] if next_heading else remainder).strip()
+        if summary:
+            return (summary[:500], text)
+
+    # フォールバック: 冒頭段落を summary とする
+    first_paragraph = re.split(r"\n\s*\n", text, maxsplit=1)[0].strip()
+    summary = first_paragraph[:500] if first_paragraph else text[:500]
+    return (summary, text)
+
+
+def _build_research_assistant_reply(summary: str, is_cache_hit: bool) -> str:
+    source_note = "（既存ナレッジを再利用）" if is_cache_hit else "（新規に調査実行）"
+    return f"🔬 **Deep Research 結果 {source_note}**\n\n{summary}"
+
+
+async def _ensure_system_bot_user(session: AsyncSession) -> uuid.UUID:
+    """
+    Deep Research 共有財産の所有者となる system bot ユーザーを保証する。
+    """
+    configured = getattr(settings, "system_bot_user_id", None) or DEFAULT_SYSTEM_BOT_USER_ID
+    system_user_id = uuid.UUID(configured)
+
+    existing = await session.get(User, system_user_id)
+    if existing:
+        return system_user_id
+
+    email_result = await session.execute(
+        select(User).where(User.email == "system-bot@mindyard.local")
+    )
+    existing_by_email = email_result.scalar_one_or_none()
+    if existing_by_email:
+        return existing_by_email.id
+
+    system_user = User(
+        id=system_user_id,
+        email="system-bot@mindyard.local",
+        hashed_password=get_password_hash(str(uuid.uuid4())),
+        display_name="MINDYARD System",
+        is_active=True,
+        is_verified=True,
+    )
+    session.add(system_user)
+    await session.flush()
+    return system_user_id
+
+
+async def _find_cached_research_insight(cache_query: str) -> Optional[InsightCard]:
+    """
+    既存の Deep Research Insight をベクトル検索で探索する。
+    """
+    similar = await knowledge_store.search_similar(
+        query=cache_query,
+        limit=1,
+        score_threshold=0.88,
+        filter_tags=["deep_research"],
+    )
+    if not similar:
+        return None
+
+    best = similar[0]
+    insight_id = best.get("insight_id")
+    if not insight_id:
+        return None
+
+    try:
+        target_id = uuid.UUID(str(insight_id))
+    except Exception:
+        return None
+
+    async with async_session_maker() as session:
+        result = await session.execute(
+            select(InsightCard).where(
+                InsightCard.id == target_id,
+                InsightCard.status == InsightStatus.APPROVED,
+            )
+        )
+        return result.scalar_one_or_none()
+
+
+def _build_cached_report(insight: InsightCard) -> Tuple[str, str]:
+    summary = (insight.summary or "").strip() or "既存の調査結果を再利用しました。"
+    parts = [
+        f"## {insight.title}",
+        "",
+        summary,
+    ]
+    if insight.context:
+        parts.extend(["", "### 背景", insight.context])
+    if insight.problem:
+        parts.extend(["", "### 課題", insight.problem])
+    if insight.solution:
+        parts.extend(["", "### 知見", insight.solution])
+    return (summary[:500], "\n".join(parts).strip())
 
 
 def run_async(coro):
@@ -410,12 +525,13 @@ def process_log_for_insight(self, log_id: str):
 
 
 @celery_app.task(bind=True, max_retries=3)
-def deep_research_task(self, query: str, user_id: str, log_id: str = ""):
+def deep_research_task(self, query: str, user_id: str):
     """
-    Deep Research タスク: DEEPモデルで詳細調査 → DB保存 → 共有知に自動登録
+    Knowledge Node からキックされる非同期調査タスク
 
-    コストの高いDeep Researchは自動的に共有知（みんなの知恵）に分類され、
-    全体共有されて重複を避ける仕組み。
+    ユーザーの質問に対してDEEPモデルで詳細な調査を行い、
+    結果をCeleryバックエンド経由で返す。
+    将来的にWebSocket通知やDB保存にも対応可能。
     """
     async def _research():
         await engine.dispose()
@@ -435,17 +551,10 @@ def deep_research_task(self, query: str, user_id: str, log_id: str = ""):
 以下の質問について、深く掘り下げた包括的な調査レポートを作成してください。
 
 レポートのフォーマット:
-## 概要
-質問への総合的な回答（2-3文）
-
-## 詳細分析
-各論点の掘り下げ（箇条書き + 説明）
-
-## エビデンス
-根拠となる情報・データ・数値
-
-## 結論と推奨
-まとめと次のアクション
+1. 概要: 質問への総合的な回答
+2. 詳細分析: 各論点の掘り下げ
+3. エビデンス: 根拠となる情報・データ
+4. 結論と推奨: まとめと次のアクション
 
 日本語で応答してください。"""
 
@@ -457,56 +566,13 @@ def deep_research_task(self, query: str, user_id: str, log_id: str = ""):
                 temperature=0.3,
             )
 
-            report = result.content
             logger.info(f"Deep research completed for user_id: {user_id}")
-
-            # ── DB保存: ログの structural_analysis に deep_research を格納 ──
-            if log_id:
-                try:
-                    async with async_session_maker() as session:
-                        log_result = await session.execute(
-                            select(RawLog).where(RawLog.id == uuid.UUID(log_id))
-                        )
-                        log = log_result.scalar_one_or_none()
-                        if log:
-                            existing = log.structural_analysis or {}
-                            existing["deep_research"] = {
-                                "report": report,
-                                "completed_at": datetime.utcnow().isoformat(),
-                            }
-                            log.structural_analysis = existing
-                            await session.commit()
-                            logger.info(f"Deep research saved to log: {log_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to save deep research to log: {e}")
-
-            # ── 共有知に自動登録（コストの高い調査は重複を避けるため共有） ──
-            try:
-                from app.services.layer3.knowledge_store import knowledge_store
-
-                dr_insight_id = f"dr-{log_id or uuid.uuid4().hex[:8]}"
-                await knowledge_store.store_insight(
-                    insight_id=dr_insight_id,
-                    insight={
-                        "title": f"調査: {query[:50]}",
-                        "summary": report[:500] if report else "",
-                        "topics": [],
-                        "tags": ["deep_research"],
-                        "content": report,
-                    },
-                )
-                logger.info(
-                    f"Deep research auto-shared to knowledge store: log_id={log_id}"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to store deep research in knowledge store: {e}")
 
             return {
                 "status": "success",
                 "user_id": user_id,
                 "query": query,
-                "report": report,
-                "log_id": log_id,
+                "report": result.content,
             }
 
         except Exception as e:
@@ -514,6 +580,275 @@ def deep_research_task(self, query: str, user_id: str, log_id: str = ""):
                 f"Error in deep_research_task for user_id {user_id}: {str(e)}",
                 exc_info=True,
             )
+            return {"status": "error", "message": str(e)}
+
+    return run_async(_research())
+
+
+@celery_app.task(bind=True, max_retries=3)
+def run_deep_research_task(
+    self,
+    user_id: str,
+    thread_id: str,
+    query: str,
+    initial_context: str,
+    research_log_id: str,
+    research_plan: Optional[Dict[str, Any]] = None,
+):
+    """
+    Deep Research 非同期タスク
+
+    deep_research_node からキックされ、DEEP モデルで詳細調査を行い、
+    結果を RawLog の assistant_reply に保存する。
+
+    Args:
+        user_id: ユーザーID
+        thread_id: 会話スレッドID
+        query: 調査クエリ（ユーザーの元の質問）
+        initial_context: 初回回答（深掘り用コンテキスト）
+        research_log_id: 結果を保存する RawLog の ID（事前生成）
+    """
+    async def _research():
+        await engine.dispose()
+
+        try:
+            logger.info(
+                f"Starting deep research task for user_id: {user_id}, "
+                f"log_id: {research_log_id}, query: {query[:100]}"
+            )
+
+            from app.core.llm import llm_manager
+            from app.core.llm_provider import LLMUsageRole
+
+            plan = research_plan if isinstance(research_plan, dict) else {}
+            cache_query_parts = [
+                query,
+                plan.get("topic", ""),
+                plan.get("scope", ""),
+                " ".join(plan.get("perspectives", [])) if isinstance(plan.get("perspectives"), list) else "",
+            ]
+            cache_query = "\n".join([p for p in cache_query_parts if p]).strip()
+
+            cached_insight = await _find_cached_research_insight(cache_query or query)
+            cached_insight_id = None
+            is_cache_hit = cached_insight is not None
+
+            if cached_insight:
+                cached_insight_id = str(cached_insight.id)
+                summary_text, detailed_report = _build_cached_report(cached_insight)
+                logger.info(
+                    "Deep research cache hit",
+                    extra={"research_log_id": research_log_id, "insight_id": cached_insight_id},
+                )
+            else:
+                provider = llm_manager.get_client(LLMUsageRole.DEEP)
+                await provider.initialize()
+
+                system_prompt = (
+                    "あなたはMINDYARDの Deep Research アシスタントです。\n"
+                    "ユーザーのクエリに対して、徹底的かつ包括的な調査レポートを作成してください。\n\n"
+                    "### 出力制約（厳守）:\n"
+                    "- **文字数: 2,000〜3,000文字**に収めること。超過禁止。\n"
+                    "- 詳細は**箇条書き（・ や - ）**で簡潔にまとめる。\n"
+                    "- Markdownテーブルを使う場合、**各セルは50文字以内**にすること。\n"
+                    "- 冗長な前置き・繰り返しを避け、情報密度を高く保つ。\n\n"
+                    "### 調査方針:\n"
+                    "1. **多角的な視点**: 複数の観点からトピックを分析する\n"
+                    "2. **構造化された回答**: 見出し・箇条書きを使って情報を整理する\n"
+                    "3. **エビデンスベース**: 主張には根拠や出典の方向性を示す\n"
+                    "4. **実用性重視**: ユーザーが次のアクションを取れる具体的情報\n\n"
+                    "### 出力フォーマット:\n"
+                    "- 概要（1-2文のサマリー）\n"
+                    "- 主要な発見・知見（箇条書き）\n"
+                    "- 詳細分析（各ポイントの掘り下げ）\n"
+                    "- 次のステップの提案\n\n"
+                    "### 注意事項:\n"
+                    "- 日本語で応答する\n"
+                    "- 確証のない情報は「〜の可能性があります」等と明記する\n"
+                    "- 専門用語には簡潔な説明を付ける\n"
+                )
+
+                research_query = query
+                if initial_context:
+                    research_query = (
+                        f"元の質問: {query}\n\n"
+                        f"初回の回答（これを深掘りしてください）:\n{initial_context}"
+                    )
+
+                if plan:
+                    plan_lines = [
+                        f"- タイトル: {plan.get('title', '')}",
+                        f"- 調査主題: {plan.get('topic', '')}",
+                        f"- 調査範囲: {plan.get('scope', '')}",
+                        "- 視点: " + (
+                            ", ".join(plan.get("perspectives", []))
+                            if isinstance(plan.get("perspectives"), list)
+                            else str(plan.get("perspectives", ""))
+                        ),
+                    ]
+                    research_query += "\n\n調査計画書（ユーザー承認済み）:\n" + "\n".join(plan_lines)
+
+                result = await provider.generate_text(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": research_query},
+                    ],
+                    temperature=0.3,
+                )
+
+                research_report = result.content
+                summary_text, detailed_report = _split_research_report(research_report)
+                logger.info(
+                    f"Deep research completed for log_id: {research_log_id}, "
+                    f"length: {len(research_report)}"
+                )
+
+            assistant_reply = _build_research_assistant_reply(summary_text, is_cache_hit=is_cache_hit)
+            logger.info(
+                f"Deep research result prepared for log_id: {research_log_id}, "
+                f"cache_hit: {is_cache_hit}"
+            )
+
+            # 結果を RawLog に保存
+            # Path 1 (POST /logs/): 既存ログを更新
+            # Path 2 (conversation graph): 新規ログを作成（system 所有）
+            async with async_session_maker() as session:
+                system_bot_user_id = await _ensure_system_bot_user(session)
+                metadata_analysis = {
+                    "deep_research": {
+                        "title": plan.get("title") if isinstance(plan, dict) else None,
+                        "topic": plan.get("topic") if isinstance(plan, dict) else None,
+                        "scope": plan.get("scope") if isinstance(plan, dict) else None,
+                        "perspectives": plan.get("perspectives", []) if isinstance(plan, dict) else [],
+                        "summary": summary_text,
+                        "details": detailed_report,
+                        "requested_by_user_id": user_id,
+                        "is_cache_hit": is_cache_hit,
+                        "cached_insight_id": cached_insight_id,
+                    }
+                }
+                existing_log = await session.get(RawLog, uuid.UUID(research_log_id))
+                if existing_log:
+                    # 既存ログを更新（POST /logs/ で作成済みのログ）
+                    existing_log.assistant_reply = assistant_reply
+                    existing_log.metadata_analysis = metadata_analysis
+                    existing_log.is_analyzed = True
+                    existing_log.is_structure_analyzed = True
+                    existing_log.is_processed_for_insight = True
+                    log = existing_log
+                else:
+                    # 新規ログを作成（conversation graph 経由）
+                    log = RawLog(
+                        id=uuid.UUID(research_log_id),
+                        user_id=system_bot_user_id,
+                        thread_id=uuid.UUID(thread_id) if thread_id else None,
+                        content=query,
+                        content_type="deep_research",
+                        assistant_reply=assistant_reply,
+                        metadata_analysis=metadata_analysis,
+                        is_analyzed=True,
+                        is_structure_analyzed=True,
+                        is_processed_for_insight=True,
+                    )
+                    session.add(log)
+                await session.flush()
+
+                # Deep Research は即時に共有財産（APPROVED Insight）として作成
+                if not is_cache_hit:
+                    topic = plan.get("topic") if isinstance(plan, dict) else None
+                    insight = InsightCard(
+                        author_id=system_bot_user_id,
+                        source_log_id=log.id,
+                        title=(plan.get("title") if isinstance(plan, dict) else None) or query[:120],
+                        context=(plan.get("scope") if isinstance(plan, dict) else None),
+                        problem=topic,
+                        solution=detailed_report[:4000],
+                        summary=summary_text,
+                        topics=[topic] if topic else None,
+                        tags=["deep_research", "shared_asset"],
+                        sharing_value_score=100.0,
+                        novelty_score=0.0,
+                        generality_score=100.0,
+                        status=InsightStatus.APPROVED,
+                        published_at=datetime.now(timezone.utc),
+                    )
+                    session.add(insight)
+                    await session.flush()
+
+                    vector_id = await knowledge_store.store_insight(
+                        insight_id=str(insight.id),
+                        insight={
+                            "title": insight.title,
+                            "context": insight.context,
+                            "problem": insight.problem,
+                            "solution": insight.solution,
+                            "summary": insight.summary,
+                            "topics": insight.topics or [],
+                            "tags": insight.tags or [],
+                        },
+                    )
+                    if vector_id:
+                        insight.vector_id = vector_id
+
+                await session.commit()
+                logger.info(f"Deep research result saved to log_id: {research_log_id}")
+
+            return {
+                "status": "success",
+                "log_id": research_log_id,
+                "user_id": user_id,
+                "report_length": len(detailed_report),
+                "cache_hit": is_cache_hit,
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error in run_deep_research_task for log_id {research_log_id}: {str(e)}",
+                exc_info=True,
+            )
+            # エラーでも結果を保存（ユーザーに通知するため）
+            try:
+                async with async_session_maker() as session:
+                    system_bot_user_id = await _ensure_system_bot_user(session)
+                    error_reply = (
+                        "Deep Research の実行中にエラーが発生しました。\n"
+                        "再度お試しいただくこともできます。"
+                    )
+                    error_metadata = {
+                        "deep_research": {
+                            "requested_by_user_id": user_id,
+                            "summary": "Deep Research の実行中にエラーが発生しました。",
+                            "details": "再度お試しいただくこともできます。",
+                            "is_cache_hit": False,
+                        }
+                    }
+                    existing_log = await session.get(RawLog, uuid.UUID(research_log_id))
+                    if existing_log:
+                        existing_log.assistant_reply = error_reply
+                        existing_log.metadata_analysis = error_metadata
+                        existing_log.is_analyzed = True
+                        existing_log.is_structure_analyzed = True
+                        existing_log.is_processed_for_insight = True
+                    else:
+                        log = RawLog(
+                            id=uuid.UUID(research_log_id),
+                            user_id=system_bot_user_id,
+                            thread_id=uuid.UUID(thread_id) if thread_id else None,
+                            content=query,
+                            content_type="deep_research",
+                            assistant_reply=error_reply,
+                            metadata_analysis=error_metadata,
+                            is_analyzed=True,
+                            is_structure_analyzed=True,
+                            is_processed_for_insight=True,
+                        )
+                        session.add(log)
+                    await session.commit()
+            except Exception:
+                logger.error(
+                    f"Failed to save error log for {research_log_id}",
+                    exc_info=True,
+                )
             return {"status": "error", "message": str(e)}
 
     return run_async(_research())

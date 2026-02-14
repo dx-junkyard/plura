@@ -14,7 +14,7 @@ import type {
   RecommendationResponse,
   ConversationIntent,
   ConversationResponse,
-  TaskStatusResponse,
+  ResearchPlan,
 } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
@@ -211,18 +211,33 @@ class ApiClient {
   // Conversation (LangGraph Dynamic Routing)
   async converse(
     inputText: string,
-    modeOverride?: ConversationIntent
+    options?: {
+      modeOverride?: ConversationIntent;
+      researchApproved?: boolean;
+      researchPlanConfirmed?: boolean;
+      researchPlan?: ResearchPlan;
+      threadId?: string;
+    },
   ): Promise<ConversationResponse> {
-    const { data } = await this.client.post<ConversationResponse>('/conversation/', {
+    const body: Record<string, unknown> = {
       message: inputText,
-      mode_override: modeOverride,
-    });
-    return data;
-  }
-
-  // Tasks (非同期タスクステータス)
-  async getTaskStatus(taskId: string): Promise<TaskStatusResponse> {
-    const { data } = await this.client.get<TaskStatusResponse>(`/tasks/${taskId}`);
+    };
+    if (options?.modeOverride) {
+      body.mode_override = options.modeOverride;
+    }
+    if (options?.researchApproved) {
+      body.research_approved = true;
+    }
+    if (options?.researchPlanConfirmed) {
+      body.research_plan_confirmed = true;
+    }
+    if (options?.researchPlan) {
+      body.research_plan = options.researchPlan;
+    }
+    if (options?.threadId) {
+      body.thread_id = options.threadId;
+    }
+    const { data } = await this.client.post<ConversationResponse>('/conversation/', body);
     return data;
   }
 

@@ -7,8 +7,10 @@ from datetime import datetime
 from typing import Optional
 import uuid
 
+logger = logging.getLogger(__name__)
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, status, UploadFile, File
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from openai import AsyncOpenAI
 
@@ -21,7 +23,6 @@ from app.schemas.raw_log import (
     RawLogResponse,
     RawLogListResponse,
     AckResponse,
-    DeepResearchInfo,
 )
 from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer1.situation_router import situation_router
@@ -31,17 +32,8 @@ from app.services.layer1.conversation_context import (
     search_collective_wisdom,
     get_profile_summary,
 )
-from app.workers.tasks import analyze_log_structure, process_log_for_insight, deep_research_task, update_user_profile
+from app.workers.tasks import analyze_log_structure, process_log_for_insight, run_deep_research_task, update_user_profile
 from app.core.config import settings
-
-import re
-
-logger = logging.getLogger(__name__)
-
-# Deep Research トリガーキーワード
-_DEEP_RESEARCH_KEYWORDS = re.compile(
-    r"調査して|リサーチして|調べて|詳しく調べ|深掘りして|研究して|エビデンス|論文|データを集め"
-)
 
 router = APIRouter()
 
@@ -102,6 +94,20 @@ def get_openai_client() -> AsyncOpenAI:
     return _openai_client
 
 
+def _log_visibility_filter(current_user_id: uuid.UUID):
+    """
+    通常ログは user_id で可視化し、Deep Research(system所有)は requested_by_user_id で可視化する。
+    """
+    requested_deep_research = and_(
+        RawLog.content_type == "deep_research",
+        RawLog.metadata_analysis["deep_research"]["requested_by_user_id"].astext == str(current_user_id),
+    )
+    return or_(
+        RawLog.user_id == current_user_id,
+        requested_deep_research,
+    )
+
+
 @router.post("/", response_model=AckResponse, status_code=status.HTTP_201_CREATED)
 async def create_log(
     log_in: RawLogCreate,
@@ -156,8 +162,33 @@ async def create_log(
         # 解析エラーは無視（後でリトライ可能）
         pass
 
-    # 状態共有（STATE）は即時の共感応答のみ返し、構造分析は実行しない
-    if log.intent != LogIntent.STATE:
+    # Deep Research の場合、バックグラウンドタスクをキックして即時応答を返す
+    conversation_reply = None
+
+    if log.intent == LogIntent.DEEP_RESEARCH:
+        try:
+            run_deep_research_task.delay(
+                user_id=str(current_user.id),
+                thread_id=str(log.thread_id) if log.thread_id else None,
+                query=log.content,
+                initial_context="",
+                research_log_id=str(log.id),
+                research_plan={},
+            )
+            conversation_reply = (
+                "Deep Researchのリクエストを受け付けました。"
+                "詳細な調査レポートを作成しますので、少々お待ちください。"
+                "（完了すると通知されます）"
+            )
+            log.assistant_reply = conversation_reply
+            await session.commit()
+        except Exception as e:
+            _logger = logging.getLogger(__name__)
+            _logger.error("Failed to queue deep research task: %s", e)
+            conversation_reply = "Deep Researchの開始に失敗しました。"
+
+    elif log.intent != LogIntent.STATE:
+        # 状態共有（STATE）は即時の共感応答のみ返し、構造分析は実行しない
         # 構造分析タスクを非同期でキック（Layer 2）
         try:
             analyze_log_structure.delay(str(log.id))
@@ -172,114 +203,80 @@ async def create_log(
         pass
 
     # ── ユーザープロファイル更新（バックグラウンド） ──
-    # 投稿のたびにインクリメンタルに最新化する
     try:
         update_user_profile.delay(str(current_user.id))
     except Exception:
         pass
 
-    # 直前の構造的課題を取得（Situation Router 用）
-    # 1. 同一スレッド内を探す → 2. なければスレッド横断で直近ログを参照
-    previous_topic = None
-    prev_log = None
-
-    # ── 1. 同一スレッド内 ──
-    if log.thread_id:
-        prev_result = await session.execute(
-            select(RawLog)
-            .where(
-                RawLog.user_id == current_user.id,
-                RawLog.thread_id == log.thread_id,
-                RawLog.id != log.id,
-            )
-            .order_by(desc(RawLog.created_at))
-            .limit(1)
-        )
-        prev_log = prev_result.scalar_one_or_none()
-
-    # ── 2. フォールバック: スレッド横断で直近ログ ──
-    if prev_log is None:
-        fallback_result = await session.execute(
-            select(RawLog)
-            .where(
-                RawLog.user_id == current_user.id,
-                RawLog.id != log.id,
-            )
-            .order_by(desc(RawLog.created_at))
-            .limit(1)
-        )
-        prev_log = fallback_result.scalar_one_or_none()
-
-    if prev_log and prev_log.structural_analysis:
-        previous_topic = (
-            prev_log.structural_analysis.get("updated_structural_issue")
-            or prev_log.structural_analysis.get("structural_issue")
-        )
-
-    # 状況をコードで分類
-    situation = situation_router.classify(log_in.content, previous_topic)
-
-    # ── LangGraph 統合: コンテキストを準備して会話グラフを実行 ──
-    conversation_reply = None
-    try:
-        # コンテキスト読み込み（履歴・みんなの知恵・プロファイル）
-        thread_history = await load_thread_history(
-            session, current_user.id, log.id,
-            thread_id=getattr(log, "thread_id", None),
-        )
-        collective_wisdom = await search_collective_wisdom(log_in.content)
-        profile_summary = await get_profile_summary(session, current_user.id)
-
-        # 状況ヒントを生成
-        situation_hint = _build_situation_hint(situation) if situation else None
-
-        # LangGraph 実行
-        graph_result = await run_conversation(
-            input_text=log_in.content,
-            user_id=str(current_user.id),
-            thread_history=thread_history,
-            collective_wisdom=collective_wisdom,
-            user_profile_summary=profile_summary,
-            situation_hint=situation_hint,
-        )
-        conversation_reply = graph_result.response
-
-        if conversation_reply:
-            log.assistant_reply = conversation_reply
-            await session.commit()
-    except Exception as e:
-        logger.warning("create_log: LangGraph conversation failed: %s", e, exc_info=True)
+    # Deep Research 実行時は会話エージェントをスキップ（既に返答が決まっている）
     if conversation_reply is None:
-        logger.info("create_log: conversation_reply not generated (LLM may be unavailable)")
+        # 直前の構造的課題を取得（Situation Router 用）
+        previous_topic = None
+        prev_log = None
 
-    # ── Deep Research トリガー判定 ──
-    # 探究心が高い（STRUCTURE intent）or 明示的なキーワードを含む場合にキック
-    deep_research_info = None
-    should_deep_research = (
-        log.intent == LogIntent.STRUCTURE
-        and _DEEP_RESEARCH_KEYWORDS.search(log_in.content)
-    ) or (
-        _DEEP_RESEARCH_KEYWORDS.search(log_in.content)
-        and len(log_in.content) >= 20
-    )
+        # ── 1. 同一スレッド内 ──
+        if log.thread_id:
+            prev_result = await session.execute(
+                select(RawLog)
+                .where(
+                    RawLog.user_id == current_user.id,
+                    RawLog.thread_id == log.thread_id,
+                    RawLog.id != log.id,
+                )
+                .order_by(desc(RawLog.created_at))
+                .limit(1)
+            )
+            prev_log = prev_result.scalar_one_or_none()
 
-    if should_deep_research:
+        # ── 2. フォールバック: スレッド横断で直近ログ ──
+        if prev_log is None:
+            fallback_result = await session.execute(
+                select(RawLog)
+                .where(
+                    RawLog.user_id == current_user.id,
+                    RawLog.id != log.id,
+                )
+                .order_by(desc(RawLog.created_at))
+                .limit(1)
+            )
+            prev_log = fallback_result.scalar_one_or_none()
+
+        if prev_log and prev_log.structural_analysis:
+            previous_topic = (
+                prev_log.structural_analysis.get("updated_structural_issue")
+                or prev_log.structural_analysis.get("structural_issue")
+            )
+
+        # 状況をコードで分類
+        situation = situation_router.classify(log_in.content, previous_topic)
+
+        # ── LangGraph 統合: コンテキストを準備して会話グラフを実行 ──
         try:
-            task = deep_research_task.delay(
-                query=log_in.content,
+            thread_history = await load_thread_history(
+                session, current_user.id, log.id,
+                thread_id=getattr(log, "thread_id", None),
+            )
+            collective_wisdom = await search_collective_wisdom(log_in.content)
+            profile_summary = await get_profile_summary(session, current_user.id)
+            situation_hint = _build_situation_hint(situation) if situation else None
+
+            graph_result = await run_conversation(
+                input_text=log_in.content,
                 user_id=str(current_user.id),
-                log_id=str(log.id),
+                thread_history=thread_history,
+                collective_wisdom=collective_wisdom,
+                user_profile_summary=profile_summary,
+                situation_hint=situation_hint,
             )
-            deep_research_info = DeepResearchInfo(
-                task_id=task.id,
-                status="queued",
-                message="詳細な調査をバックグラウンドで実行中です...",
-            )
-            logger.info(
-                f"Deep research triggered: log_id={log.id}, task_id={task.id}"
-            )
+            conversation_reply = graph_result.response
+
+            if conversation_reply:
+                log.assistant_reply = conversation_reply
+                await session.commit()
         except Exception as e:
-            logger.warning(f"Failed to dispatch deep_research_task: {e}")
+            logger.warning("create_log: LangGraph conversation failed: %s", e, exc_info=True)
+        if conversation_reply is None:
+            logger.info("create_log: conversation_reply not generated (LLM may be unavailable)")
 
     # 受容的な相槌を返す
     return AckResponse.create_ack(
@@ -289,7 +286,7 @@ async def create_log(
         emotions=log.emotions,
         content=log.content,
         conversation_reply=conversation_reply,
-        deep_research=deep_research_info,
+        research_log_id=str(log.id) if log.intent == LogIntent.DEEP_RESEARCH else None,
     )
 
 
@@ -306,7 +303,7 @@ async def list_logs(
     """
     # 総数を取得
     count_result = await session.execute(
-        select(func.count(RawLog.id)).where(RawLog.user_id == current_user.id)
+        select(func.count(RawLog.id)).where(_log_visibility_filter(current_user.id))
     )
     total = count_result.scalar()
 
@@ -314,7 +311,7 @@ async def list_logs(
     offset = (page - 1) * page_size
     result = await session.execute(
         select(RawLog)
-        .where(RawLog.user_id == current_user.id)
+        .where(_log_visibility_filter(current_user.id))
         .order_by(desc(RawLog.created_at))
         .offset(offset)
         .limit(page_size)
@@ -339,7 +336,7 @@ async def get_log(
     result = await session.execute(
         select(RawLog).where(
             RawLog.id == log_id,
-            RawLog.user_id == current_user.id,
+            _log_visibility_filter(current_user.id),
         )
     )
     log = result.scalar_one_or_none()
