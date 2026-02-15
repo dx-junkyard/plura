@@ -239,7 +239,7 @@ class GoogleGenAIClient(LLMProvider):
         )
 
         try:
-            response = await self.client.models.generate_content_async(
+            response = await self.client.aio.models.generate_content(
                 model=model_name,
                 contents=contents,
                 config=config,
@@ -255,7 +255,7 @@ class GoogleGenAIClient(LLMProvider):
                 temperature=temperature or self.config.temperature,
                 system_instruction=system_instruction,
             )
-            response = await self.client.models.generate_content_async(
+            response = await self.client.aio.models.generate_content(
                 model=model_name,
                 contents=contents,
                 config=config,
@@ -327,7 +327,7 @@ class GoogleGenAIClient(LLMProvider):
 
         for model_name in models_to_try:
             try:
-                response = await self.client.models.generate_content_async(
+                response = await self.client.aio.models.generate_content(
                     model=model_name,
                     contents=contents,
                     config=config,
