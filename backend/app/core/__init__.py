@@ -1,3 +1,3 @@
 """
-MINDYARD - Core Module
+PLURA - Core Module
 """

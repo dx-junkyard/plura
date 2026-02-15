@@ -1,5 +1,5 @@
 """
-MINDYARD - Recommendation Model
+PLURA - Recommendation Model
 Layer 3 のレコメンデーション永続化モデル
 """
 import uuid

@@ -1,5 +1,5 @@
 """
-MINDYARD - User Topic Profile Model
+PLURA - User Topic Profile Model
 ユーザーごとのトピック別知識レベル・関心度を管理するテーブル
 将来的なパーソナライズのためにテーブル定義を先行実装
 """

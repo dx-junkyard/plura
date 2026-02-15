@@ -1,8 +1,8 @@
-# MINDYARD
+# PLURA
 
 **「自分だけのノートから、みんなの集合知へ」**
 
-MINDYARDは、個人が自分のために行う「記録（Log）」を、組織全体の「集合知（Wisdom of Crowds）」へと自然に変換するナレッジ共創プラットフォームです。
+PLURAは、個人が自分のために行う「記録（Log）」を、組織全体の「集合知（Wisdom of Crowds）」へと自然に変換するナレッジ共創プラットフォームです。
 
 ## アーキテクチャ
 
@@ -34,7 +34,7 @@ MINDYARDは、個人が自分のために行う「記録（Log）」を、組織
 
 ### LLMアーキテクチャ
 
-MINDYARDは用途に応じて最適なLLMプロバイダーとモデルを選択できるマルチプロバイダー設計を採用しています。
+PLURAは用途に応じて最適なLLMプロバイダーとモデルを選択できるマルチプロバイダー設計を採用しています。
 
 | 用途 | 使用箇所 | デフォルトモデル | 特徴 |
 |------|----------|------------------|------|
@@ -164,7 +164,7 @@ EMBEDDING_CONFIG='{"provider": "vertex", "model": "text-embedding-004"}'
 ```bash
 # サービスアカウントの作成
 gcloud iam service-accounts create mindyard-llm \
-    --display-name="MINDYARD LLM Service Account"
+    --display-name="PLURA LLM Service Account"
 
 # 必要な権限の付与
 gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \

@@ -1,5 +1,5 @@
 """
-MINDYARD - Chit-Chat Node
+PLURA - Chit-Chat Node
 雑談・カジュアルな会話を処理するノード
 
 気軽で親しみやすいトーンで応答する。

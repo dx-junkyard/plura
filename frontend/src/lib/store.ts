@@ -1,5 +1,5 @@
 /**
- * MINDYARD - Zustand Store
+ * PLURA - Zustand Store
  * グローバル状態管理
  */
 import { create } from 'zustand';

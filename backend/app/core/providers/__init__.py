@@ -1,5 +1,5 @@
 """
-MINDYARD - LLM & Embedding Providers
+PLURA - LLM & Embedding Providers
 プロバイダー実装のパッケージ
 """
 # LLM Providers

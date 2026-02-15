@@ -1,5 +1,5 @@
 """
-MINDYARD - Insight Card Model
+PLURA - Insight Card Model
 Layer 3: Public Plaza のインサイトモデル
 精製・匿名化された知見を保存する
 """

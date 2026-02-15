@@ -1,4 +1,4 @@
-# MINDYARD 開発ガイド
+# PLURA 開発ガイド
 
 ## 「localhost で接続が拒否されました」(ERR_CONNECTION_REFUSED) が出たとき
 

@@ -1,5 +1,5 @@
 """
-MINDYARD - Intent Router (Hypothesis-Driven)
+PLURA - Intent Router (Hypothesis-Driven)
 仮説駆動型ルーティング: ユーザーの真意を仮説→検証→修正のループで推定する
 
 分類カテゴリ:

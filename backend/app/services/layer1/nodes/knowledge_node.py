@@ -1,5 +1,5 @@
 """
-MINDYARD - Knowledge & Async Trigger Node
+PLURA - Knowledge & Async Trigger Node
 知識要求に即座に回答しつつ、必要に応じてCeleryで深掘り調査をキックするノード
 
 UXポイント:
@@ -15,7 +15,7 @@ from app.core.logger import get_traced_logger
 
 logger = get_traced_logger("KnowledgeNode")
 
-_SYSTEM_PROMPT = """あなたはMINDYARDのナレッジアシスタントです。
+_SYSTEM_PROMPT = """あなたはPLURAのナレッジアシスタントです。
 ユーザーの知識要求に対して、正確で分かりやすい回答を提供してください。
 
 ルール:

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - Login Page
+ * PLURA - Login Page
  */
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -47,7 +47,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-xl shadow-lg p-8">
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-gray-800">MINDYARD</h1>
+            <h1 className="text-2xl font-bold text-gray-800">PLURA</h1>
             <p className="text-gray-500 mt-2">
               自分だけのノートから、みんなの集合知へ
             </p>

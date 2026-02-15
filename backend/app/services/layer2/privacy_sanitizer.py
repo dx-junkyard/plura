@@ -1,5 +1,5 @@
 """
-MINDYARD - Privacy Sanitizer
+PLURA - Privacy Sanitizer
 Layer 2: 個人特定につながる情報を除去・置換するフィルター
 
 正確性が重要なため、BALANCEDモデルを使用。

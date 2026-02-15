@@ -1,3 +1,3 @@
 """
-MINDYARD - Database Module
+PLURA - Database Module
 """

@@ -1,4 +1,4 @@
-# MINDYARD Frontend Dockerfile
+# PLURA Frontend Dockerfile
 FROM node:20-alpine
 
 # 作業ディレクトリ

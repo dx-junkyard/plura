@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - Sharing Proposal Modal
+ * PLURA - Sharing Proposal Modal
  * Layer 2: 推奨インサイトの承認/拒否UI
  */
 import { useState } from 'react';

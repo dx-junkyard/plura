@@ -1,5 +1,5 @@
 """
-MINDYARD - Conversation Graph (LangGraph)
+PLURA - Conversation Graph (LangGraph)
 仮説駆動型動的ルーティングによる会話グラフ
 
 グラフ構造:

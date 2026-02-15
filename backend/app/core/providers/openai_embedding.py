@@ -1,5 +1,5 @@
 """
-MINDYARD - OpenAI Embedding Provider
+PLURA - OpenAI Embedding Provider
 OpenAI APIを使用するEmbeddingプロバイダー実装
 """
 from typing import List, Optional

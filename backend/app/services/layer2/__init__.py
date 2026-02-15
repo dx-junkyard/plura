@@ -1,5 +1,5 @@
 """
-MINDYARD - Layer 2 Services
+PLURA - Layer 2 Services
 Gateway Refinery (情報の関所)
 """
 from app.services.layer2.privacy_sanitizer import privacy_sanitizer

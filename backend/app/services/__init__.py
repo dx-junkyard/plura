@@ -1,3 +1,3 @@
 """
-MINDYARD - Services Module
+PLURA - Services Module
 """

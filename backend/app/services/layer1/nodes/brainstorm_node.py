@@ -1,5 +1,5 @@
 """
-MINDYARD - Brainstorm Node
+PLURA - Brainstorm Node
 アイデア出し・壁打ちを行うノード
 
 創造的な発想を促し、多角的な視点からアイデアを展開する。
@@ -12,7 +12,7 @@ from app.core.logger import get_traced_logger
 
 logger = get_traced_logger("BrainstormNode")
 
-_SYSTEM_PROMPT = """あなたはMINDYARDのブレインストーミングパートナーです。
+_SYSTEM_PROMPT = """あなたはPLURAのブレインストーミングパートナーです。
 ユーザーのアイデアを広げ、新しい視点を提供することが役割です。
 
 ルール:

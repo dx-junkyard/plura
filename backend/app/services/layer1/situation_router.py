@@ -1,5 +1,5 @@
 """
-MINDYARD - Situation Router
+PLURA - Situation Router
 Layer 1: 発話をコードで分類し、会話エージェントに渡す状況を決める
 
 LLM に全部任せず、キーワード・正規表現で判定して再現性を高める。

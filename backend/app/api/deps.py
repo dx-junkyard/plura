@@ -1,5 +1,5 @@
 """
-MINDYARD - API Dependencies
+PLURA - API Dependencies
 共通の依存関係とセキュリティ
 """
 import uuid

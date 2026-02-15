@@ -1,5 +1,5 @@
 """
-MINDYARD - Database Models
+PLURA - Database Models
 データベースモデルの定義
 """
 from app.models.user import User

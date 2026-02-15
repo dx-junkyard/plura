@@ -1,5 +1,5 @@
 """
-MINDYARD - Deep-Dive Node
+PLURA - Deep-Dive Node
 課題解決・深掘りを行うノード
 
 BALANCEDモデルを使用して、問題の構造化と解決策の提示を行う。

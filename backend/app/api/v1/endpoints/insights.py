@@ -1,5 +1,5 @@
 """
-MINDYARD - Insight Endpoints
+PLURA - Insight Endpoints
 Layer 3: Public Plaza API
 """
 from datetime import datetime, timezone

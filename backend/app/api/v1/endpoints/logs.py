@@ -1,5 +1,5 @@
 """
-MINDYARD - Log Endpoints
+PLURA - Log Endpoints
 Layer 1: Private Logger API
 """
 import logging

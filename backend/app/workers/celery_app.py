@@ -1,5 +1,5 @@
 """
-MINDYARD - Celery Application
+PLURA - Celery Application
 非同期タスク処理の設定
 """
 from celery import Celery

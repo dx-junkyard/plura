@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - Recommendation Panel
+ * PLURA - Recommendation Panel
  * Serendipity Matcher による「副作用的」レコメンデーション表示
  * TEAM_PROPOSAL 対応: Flash Team Formation カード
  */

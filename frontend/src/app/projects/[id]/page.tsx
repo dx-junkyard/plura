@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - Project Lobby Page
+ * PLURA - Project Lobby Page
  * Flash Team Formation: チーム結成後のプロジェクトロビー画面
  */
 import { useState } from 'react';
@@ -28,7 +28,7 @@ interface MockMessage {
 const MOCK_MESSAGES: MockMessage[] = [
   {
     id: '1',
-    sender: 'MINDYARD AI',
+    sender: 'PLURA AI',
     content:
       'Flash Team が結成されました。プロジェクトの目標と各メンバーの役割を確認してください。',
     timestamp: 'たった今',
@@ -36,7 +36,7 @@ const MOCK_MESSAGES: MockMessage[] = [
   },
   {
     id: '2',
-    sender: 'MINDYARD AI',
+    sender: 'PLURA AI',
     content:
       'AIの分析により、このチームは技術・デザイン・ドメイン知識の3領域をカバーしています。それぞれの強みを活かした協働が期待されます。',
     timestamp: 'たった今',
