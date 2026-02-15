@@ -3,6 +3,7 @@ MINDYARD - Vertex AI Embedding Provider
 Google Cloud Vertex AIを使用するEmbeddingプロバイダー実装
 """
 import asyncio
+import logging
 from typing import List, Optional
 
 from google import genai
@@ -14,6 +15,7 @@ from app.core.embedding_provider import (
     EmbeddingProviderType,
 )
 
+logger = logging.getLogger(__name__)
 
 # Vertex AI Embeddingモデルの次元数マッピング
 VERTEX_EMBEDDING_DIMENSIONS = {
@@ -30,12 +32,6 @@ VERTEX_EMBEDDING_DIMENSIONS = {
 class VertexAIEmbeddingProvider(EmbeddingProvider):
     """
     Google Cloud Vertex AIを使用するEmbeddingプロバイダー
-
-    サポートモデル:
-    - text-embedding-004 (768次元, 推奨)
-    - text-embedding-005 (768次元, 最新)
-    - text-multilingual-embedding-002 (768次元, 多言語対応)
-    - textembedding-gecko@003 (768次元)
     """
 
     def __init__(
@@ -75,6 +71,7 @@ class VertexAIEmbeddingProvider(EmbeddingProvider):
             self._initialized = True
 
         except Exception as e:
+            logger.error(f"Failed to initialize Vertex AI Client: {e}", exc_info=True)
             raise RuntimeError(f"Failed to initialize Vertex AI Embedding: {e}")
 
     @property
@@ -89,17 +86,21 @@ class VertexAIEmbeddingProvider(EmbeddingProvider):
         await self.initialize()
 
         try:
-            # google-genai supports async
-            response = await self.client.models.embed_content_async(
+            # 同期メソッド(embed_content)を非同期コンテキストで実行
+            loop = asyncio.get_running_loop()
+            response = await self.client.aio.models.embed_content(
                 model=self.config.model,
                 contents=text,
             )
 
             if response.embeddings and len(response.embeddings) > 0:
                 return response.embeddings[0].values
+            
+            logger.warning(f"Vertex AI returned no embeddings for text: {text[:50]}...")
             return None
 
-        except Exception:
+        except Exception as e:
+            logger.error(f"Vertex AI embed_text failed: {e}", exc_info=True)
             return None
 
     async def embed_texts(self, texts: List[str]) -> Optional[List[List[float]]]:
@@ -108,14 +109,15 @@ class VertexAIEmbeddingProvider(EmbeddingProvider):
 
         try:
             # Vertex AIは一度に最大250テキストまで処理可能
-            # バッチサイズを超える場合は分割
             batch_size = 250
             all_embeddings = []
+            loop = asyncio.get_running_loop()
 
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i + batch_size]
 
-                response = await self.client.models.embed_content_async(
+                # 同期メソッドを非同期コンテキストで実行
+                response = await self.client.aio.models.embed_content(
                     model=self.config.model,
                     contents=batch,
                 )
@@ -125,5 +127,6 @@ class VertexAIEmbeddingProvider(EmbeddingProvider):
 
             return all_embeddings
 
-        except Exception:
+        except Exception as e:
+            logger.error(f"Vertex AI embed_texts failed: {e}", exc_info=True)
             return None
