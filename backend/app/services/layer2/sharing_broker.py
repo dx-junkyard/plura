@@ -11,6 +11,8 @@ from app.core.config import settings
 from app.core.llm import llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
 
+import logging
+logger = logging.getLogger(__name__)
 
 class SharingBroker:
     """
@@ -52,6 +54,7 @@ class SharingBroker:
         """
         provider = self._get_provider()
         if not provider:
+            logger.warning(f"[SharingBroker] No provider available for role: {role}")
             return self._fallback_evaluate(insight)
 
         prompt = self._build_evaluation_prompt(insight)
@@ -69,6 +72,13 @@ class SharingBroker:
             return self._parse_evaluation_result(result)
 
         except Exception as e:
+            logger.error(
+                f"[SharingBroker] LLM Error during sharing evaluation!\n"
+                f"  - Model Info: {model_info}\n"
+                f"  - Role: {role}\n"
+                f"  - Error: {str(e)}", 
+                exc_info=True
+            )
             return self._fallback_evaluate(insight)
 
     def _get_evaluation_system_prompt(self) -> str:
