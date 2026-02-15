@@ -117,16 +117,19 @@ class SharingBroker:
 
     def _parse_evaluation_result(self, result: Dict) -> Dict:
         """評価結果のパース"""
-        sharing_score = float(result.get("sharing_value_score", 0))
-        novelty_score = float(result.get("novelty_score", 0))
-        generality_score = float(result.get("generality_score", 0))
+        sharing_score = float(result.get("sharing_value_score", 0) or 0)
+        novelty_score = float(result.get("novelty_score", 0) or 0)
+        generality_score = float(result.get("generality_score", 0) or 0)
+        reasoning = str(result.get("reasoning", "") or "").strip()
+        if not reasoning:
+            reasoning = "評価理由の出力なし"
 
         return {
             "sharing_value_score": sharing_score,
             "novelty_score": novelty_score,
             "generality_score": generality_score,
             "should_propose": sharing_score >= self.threshold,
-            "reasoning": result.get("reasoning", ""),
+            "reasoning": reasoning,
         }
 
     def _fallback_evaluate(self, insight: Dict) -> Dict:
