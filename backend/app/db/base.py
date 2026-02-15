@@ -38,7 +38,8 @@ engine = create_async_engine(
     settings.database_url,
     pool_size=settings.database_pool_size,
     max_overflow=settings.database_max_overflow,
-    echo=settings.debug,
+    echo=False,
+#    echo=settings.debug,
 )
 
 # 非同期セッションファクトリ

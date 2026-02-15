@@ -466,6 +466,22 @@ def process_log_for_insight(self, log_id: str):
 
                 sharing_score = evaluation.get("sharing_value_score", 0)
                 should_propose = evaluation.get("should_propose", False)
+                novelty_score = evaluation.get("novelty_score", 0)
+                generality_score = evaluation.get("generality_score", 0)
+                reasoning = (evaluation.get("reasoning") or "").strip()
+
+                # 評価の思考プロセスを可視化（チューニング用）
+                logger.info(
+                    "Insight evaluation: log_id=%s, sharing_value_score=%.1f, "
+                    "should_propose=%s, novelty_score=%.1f, generality_score=%.1f, "
+                    "reasoning=%s",
+                    log_id,
+                    float(sharing_score),
+                    should_propose,
+                    float(novelty_score),
+                    float(generality_score),
+                    reasoning or "(empty)",
+                )
 
                 # Step 4: ステータス判定
                 #   score >= 80 → 推奨（ユーザーに共有を提案）
@@ -487,8 +503,8 @@ def process_log_for_insight(self, log_id: str):
                     topics=distilled.get("topics"),
                     tags=distilled.get("tags"),
                     sharing_value_score=sharing_score,
-                    novelty_score=evaluation.get("novelty_score", 0),
-                    generality_score=evaluation.get("generality_score", 0),
+                    novelty_score=novelty_score,
+                    generality_score=generality_score,
                     status=insight_status,
                 )
 
@@ -505,7 +521,8 @@ def process_log_for_insight(self, log_id: str):
                 logger.info(
                     f"Insight pipeline complete: log_id={log_id}, "
                     f"insight_id={insight.id}, score={sharing_score}, "
-                    f"type={promotion_type}"
+                    f"type={promotion_type}, should_propose={should_propose}, "
+                    f"reasoning={reasoning or '(empty)'}"
                 )
 
                 return {
