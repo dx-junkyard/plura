@@ -1,5 +1,5 @@
 """
-MINDYARD - State Share Node
+PLURA - State Share Node
 ユーザーの短い状態共有（眠い、疲れた等）を受け止め、
 軽い共感を返しつつ裏側でコンディションデータを保存するノード
 

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - AIエージェントページ
+ * PLURA - AIエージェントページ
  * 思考の記録 → 課題・解決策の整理 → 「みんなの知恵」へ共有
  */
 import { useEffect, useState, useCallback } from 'react';

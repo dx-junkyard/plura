@@ -1,5 +1,5 @@
 """
-MINDYARD - API v1 Router
+PLURA - API v1 Router
 すべてのエンドポイントを統合
 """
 from fastapi import APIRouter

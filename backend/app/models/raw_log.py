@@ -1,5 +1,5 @@
 """
-MINDYARD - Raw Log Model
+PLURA - Raw Log Model
 Layer 1: Private Safehouse のログモデル
 ユーザーの生の思考・感情を保存する
 """

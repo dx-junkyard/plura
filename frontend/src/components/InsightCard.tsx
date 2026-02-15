@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - Insight Card Component
+ * PLURA - Insight Card Component
  * Layer 3: 公開インサイトの表示カード
  */
 import { useState } from 'react';

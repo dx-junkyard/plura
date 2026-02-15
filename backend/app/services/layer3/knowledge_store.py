@@ -1,5 +1,5 @@
 """
-MINDYARD - Knowledge Graph Store
+PLURA - Knowledge Graph Store
 Layer 3: 承認されたInsight Cardを格納するベクトルデータベース
 
 マルチプロバイダー対応のEmbeddingを使用。

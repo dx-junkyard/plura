@@ -1,5 +1,5 @@
 """
-MINDYARD - OpenAI Provider
+PLURA - OpenAI Provider
 OpenAI APIを使用するLLMプロバイダー実装
 """
 import json

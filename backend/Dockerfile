@@ -1,4 +1,4 @@
-# MINDYARD Backend Dockerfile
+# PLURA Backend Dockerfile
 FROM python:3.11-slim
 
 # 作業ディレクトリ

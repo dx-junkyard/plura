@@ -1,5 +1,5 @@
 """
-MINDYARD - Celery Tasks
+PLURA - Celery Tasks
 Layer 2 の非同期処理タスク
 """
 import asyncio
@@ -86,7 +86,7 @@ async def _ensure_system_bot_user(session: AsyncSession) -> uuid.UUID:
         id=system_user_id,
         email="system-bot@mindyard.local",
         hashed_password=get_password_hash(str(uuid.uuid4())),
-        display_name="MINDYARD System",
+        display_name="PLURA System",
         is_active=True,
         is_verified=True,
     )
@@ -749,7 +749,7 @@ def run_deep_research_task(
                 await provider.initialize()
 
                 system_prompt = (
-                    "あなたはMINDYARDの Deep Research アシスタントです。\n"
+                    "あなたはPLURAの Deep Research アシスタントです。\n"
                     "ユーザーのクエリに対して、徹底的かつ包括的な調査レポートを作成してください。\n\n"
                     "### 出力制約（厳守）:\n"
                     "- **文字数: 2,000〜3,000文字**に収めること。超過禁止。\n"

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - Navigation Component
+ * PLURA - Navigation Component
  */
 import { useEffect, useCallback } from 'react';
 import Link from 'next/link';
@@ -67,7 +67,7 @@ export function Navigation() {
       <nav className="fixed top-0 left-0 right-0 h-14 bg-white border-b border-gray-200 z-40">
         <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
           <Link href="/" className="text-xl font-bold text-primary-600">
-            MINDYARD
+            PLURA
           </Link>
           <div className="flex items-center gap-4">
             <Link
@@ -93,7 +93,7 @@ export function Navigation() {
       <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
         {/* ロゴ */}
         <Link href="/" className="text-xl font-bold text-primary-600">
-          MINDYARD
+          PLURA
         </Link>
 
         {/* ナビゲーションリンク */}

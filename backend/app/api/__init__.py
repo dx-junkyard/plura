@@ -1,3 +1,3 @@
 """
-MINDYARD - API Module
+PLURA - API Module
 """

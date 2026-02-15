@@ -1,5 +1,5 @@
 """
-MINDYARD - Pydantic Schemas
+PLURA - Pydantic Schemas
 APIリクエスト・レスポンスのスキーマ定義
 """
 from app.schemas.user import (

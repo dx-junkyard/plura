@@ -1,5 +1,5 @@
 """
-MINDYARD - Deep Research Node
+PLURA - Deep Research Node
 Celery タスクをキックし、即座にレスポンスを返すノード
 
 ユーザーの承認後に実行され、非同期で詳細リサーチを開始する。

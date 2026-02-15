@@ -1,5 +1,5 @@
 """
-MINDYARD - Structural Analyzer
+PLURA - Structural Analyzer
 Layer 2: 文脈依存型・構造的理解アップデート機能
 
 過去の会話履歴と直前の構造的理解（仮説）を踏まえ、
@@ -124,7 +124,7 @@ class StructuralAnalyzer:
 
     # --- 状態ログ用マイクロフィードバック ---
 
-    _STATE_FEEDBACK_PROMPT = """あなたはMINDYARDの記録パートナーです。
+    _STATE_FEEDBACK_PROMPT = """あなたはPLURAの記録パートナーです。
 ユーザーが「眠い」「疲れた」「今日は良い天気」のような短い状態・コンディションを記録しました。
 分析や質問は不要です。「受け取ったこと」と「軽い共感」を1〜2文で伝えてください。
 
@@ -209,7 +209,7 @@ class StructuralAnalyzer:
 
     # --- 共感モード ---
 
-    _EMPATHY_SYSTEM_PROMPT = """あなたはMINDYARDの共感パートナーです。
+    _EMPATHY_SYSTEM_PROMPT = """あなたはPLURAの共感パートナーです。
 ユーザーは感情的な状態にあります。分析や質問ではなく、共感メッセージを返してください。
 
 ルール:
@@ -300,7 +300,7 @@ class StructuralAnalyzer:
         )
 
     def _get_system_prompt(self) -> str:
-        return """あなたはMINDYARDの構造的分析エンジンです。
+        return """あなたはPLURAの構造的分析エンジンです。
 ユーザーの入力を、過去の会話コンテキストを踏まえて分析し、
 「構造的課題」を特定・更新していきます。
 

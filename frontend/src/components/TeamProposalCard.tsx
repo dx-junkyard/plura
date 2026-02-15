@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - Team Proposal Card
+ * PLURA - Team Proposal Card
  * Flash Team Formation: AIによるチーム提案カード
  */
 import { useRouter } from 'next/navigation';

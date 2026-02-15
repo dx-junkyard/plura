@@ -1,5 +1,5 @@
 """
-MINDYARD - Context Analyzer
+PLURA - Context Analyzer
 Layer 1: 入力された生ログを解析し、メタデータを付与する
 
 素早いレスポンスが必要なため、FASTモデルを使用。
@@ -75,7 +75,7 @@ class ContextAnalyzer:
             return self._fallback_analyze(content)
 
     def _get_system_prompt(self) -> str:
-        return """あなたはMINDYARDの文脈解析エンジンです。
+        return """あなたはPLURAの文脈解析エンジンです。
 ユーザーの入力テキストを解析し、以下の情報を抽出してください。
 
 必ず以下のJSON形式で応答してください:

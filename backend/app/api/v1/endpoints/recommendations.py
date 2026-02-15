@@ -1,5 +1,5 @@
 """
-MINDYARD - Recommendation Endpoints
+PLURA - Recommendation Endpoints
 Serendipity Matcher API
 """
 from typing import Dict, List, Optional

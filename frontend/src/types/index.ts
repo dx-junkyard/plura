@@ -1,5 +1,5 @@
 /**
- * MINDYARD - Type Definitions
+ * PLURA - Type Definitions
  */
 
 // User

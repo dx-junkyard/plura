@@ -1,5 +1,5 @@
 """
-MINDYARD - LLM Manager
+PLURA - LLM Manager
 マルチプロバイダー対応のLLMマネージャー（シングルトン）
 
 用途（LLMUsageRole）に応じて適切なプロバイダーとモデルの組み合わせを返却する。

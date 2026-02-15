@@ -1,5 +1,5 @@
 """
-MINDYARD - Embedding Manager
+PLURA - Embedding Manager
 マルチプロバイダー対応のEmbeddingマネージャー（シングルトン）
 """
 from typing import Any, Dict, List, Optional

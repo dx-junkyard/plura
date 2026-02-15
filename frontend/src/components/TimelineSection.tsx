@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - Timeline Section
+ * PLURA - Timeline Section
  * AIエージェントページ内に配置する過去ログのタイムライン
  */
 import { useState } from 'react';

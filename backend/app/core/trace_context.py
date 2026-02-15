@@ -1,5 +1,5 @@
 """
-MINDYARD - Request Trace Context
+PLURA - Request Trace Context
 contextvars を使用したリクエストスコープの trace_id 管理
 
 リクエスト単位で一意のIDを割り当て、ログから処理フローを追跡可能にする。

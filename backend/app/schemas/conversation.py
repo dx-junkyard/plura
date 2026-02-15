@@ -1,5 +1,5 @@
 """
-MINDYARD - Conversation Schemas
+PLURA - Conversation Schemas
 LangGraph動的ルーティングのためのスキーマ定義
 
 Hypothesis-Driven Intent Routing:

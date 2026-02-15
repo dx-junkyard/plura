@@ -1,3 +1,3 @@
 """
-MINDYARD - API v1
+PLURA - API v1
 """

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - Insights Page
+ * PLURA - Insights Page
  * Layer 3: Public Plaza (共創の広場)
  */
 import { useState, useEffect } from 'react';

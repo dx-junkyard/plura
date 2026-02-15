@@ -1,5 +1,5 @@
 """
-MINDYARD - Sharing Broker
+PLURA - Sharing Broker
 Layer 2: 生成されたインサイトをユーザーに提示し、共有の許諾を得る
 
 バランスの取れた評価が必要なため、BALANCEDモデルを使用。
@@ -82,7 +82,7 @@ class SharingBroker:
             return self._fallback_evaluate(insight)
 
     def _get_evaluation_system_prompt(self) -> str:
-        return """あなたはMINDYARDの共有価値評価エンジンです。
+        return """あなたはPLURAの共有価値評価エンジンです。
 インサイトカードが組織内で共有される価値があるかを**厳格に**評価してください。
 
 ## 評価基準（5軸）

@@ -1,5 +1,5 @@
 """
-MINDYARD - Insight Distiller
+PLURA - Insight Distiller
 Layer 2: 個別の事象を汎用的な「教訓」や「パターン」に昇華させる
 
 バランスの取れた処理が必要なため、BALANCEDモデルを使用。
@@ -71,7 +71,7 @@ class InsightDistiller:
             return self._fallback_distill(sanitized_content)
 
     def _get_system_prompt(self) -> str:
-        return """あなたはMINDYARDのインサイト蒸留器です。
+        return """あなたはPLURAのインサイト蒸留器です。
 ユーザーの経験や気づきを、組織全体で共有可能な汎用的な知見に変換してください。
 
 ## 最重要ルール: 不適格入力の検出

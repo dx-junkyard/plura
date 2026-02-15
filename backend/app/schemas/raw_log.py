@@ -1,5 +1,5 @@
 """
-MINDYARD - Raw Log Schemas
+PLURA - Raw Log Schemas
 Layer 1: Private Logger のスキーマ
 """
 import uuid

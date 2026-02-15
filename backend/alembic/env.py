@@ -1,5 +1,5 @@
 """
-MINDYARD - Alembic Environment Configuration
+PLURA - Alembic Environment Configuration
 """
 import asyncio
 from logging.config import fileConfig

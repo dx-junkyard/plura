@@ -1,5 +1,5 @@
 """
-MINDYARD - LLM Provider Abstract Interface
+PLURA - LLM Provider Abstract Interface
 マルチプロバイダー対応のための抽象インターフェース
 """
 from abc import ABC, abstractmethod

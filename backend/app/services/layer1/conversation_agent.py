@@ -1,5 +1,5 @@
 """
-MINDYARD - Conversation Agent
+PLURA - Conversation Agent
 Layer 1: 自然な人間らしい会話返答を生成する
 
 ai-agent-playground-101 方式: シンプルなプロンプト + 会話履歴 → 自然な応答

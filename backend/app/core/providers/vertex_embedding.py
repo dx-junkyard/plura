@@ -1,5 +1,5 @@
 """
-MINDYARD - Vertex AI Embedding Provider
+PLURA - Vertex AI Embedding Provider
 Google Cloud Vertex AIを使用するEmbeddingプロバイダー実装
 """
 import asyncio

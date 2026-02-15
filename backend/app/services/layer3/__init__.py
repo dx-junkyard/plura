@@ -1,5 +1,5 @@
 """
-MINDYARD - Layer 3 Services
+PLURA - Layer 3 Services
 Public Plaza (共創の広場)
 """
 from app.services.layer3.knowledge_store import knowledge_store

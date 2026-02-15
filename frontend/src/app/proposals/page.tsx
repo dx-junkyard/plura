@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - Sharing Proposals Page
+ * PLURA - Sharing Proposals Page
  * Layer 2: 推奨インサイトの一覧と承認
  */
 import { useState, useEffect } from 'react';

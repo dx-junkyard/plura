@@ -1,5 +1,5 @@
 """
-MINDYARD - FastAPI Application
+PLURA - FastAPI Application
 メインアプリケーションエントリーポイント
 """
 from contextlib import asynccontextmanager
@@ -37,7 +37,7 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """アプリケーションのライフサイクル管理"""
-    logger.info("Starting MINDYARD application", version=settings.app_version)
+    logger.info("Starting PLURA application", version=settings.app_version)
 
     # --- 起動時ログ追加 ---
     logger.info("════════════════════════════════════════")
@@ -58,14 +58,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    logger.info("Shutting down MINDYARD application")
+    logger.info("Shutting down PLURA application")
 
 
 # FastAPIアプリケーション
 app = FastAPI(
     title=settings.app_name,
     description="""
-    MINDYARD: 自分だけのノートから、みんなの集合知へ
+    PLURA: 自分だけのノートから、みんなの集合知へ
 
     個人が自分のために行う「記録（Log）」を、
     組織全体の「集合知（Wisdom of Crowds）」へと自然に変換する

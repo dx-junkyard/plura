@@ -11,7 +11,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'MINDYARD - 自分だけのノートから、みんなの集合知へ',
+  title: 'PLURA - 自分だけのノートから、みんなの集合知へ',
   description:
     '個人が自分のために行う「記録」を、組織全体の「集合知」へと自然に変換するナレッジ共創プラットフォーム',
   keywords: ['ナレッジマネジメント', '集合知', 'メモ', '記録', 'チーム'],

@@ -1,5 +1,5 @@
 """
-MINDYARD - User Schemas
+PLURA - User Schemas
 ユーザー関連のスキーマ
 """
 import uuid

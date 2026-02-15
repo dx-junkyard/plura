@@ -1,5 +1,5 @@
 """
-MINDYARD - Workers Module
+PLURA - Workers Module
 Celery タスク定義
 """
 from app.workers.celery_app import celery_app

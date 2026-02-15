@@ -1,5 +1,5 @@
 """
-MINDYARD - User State Model
+PLURA - User State Model
 ユーザーのコンディション（体調・気分・集中度）を時系列で保存する軽量テーブル
 """
 import uuid
