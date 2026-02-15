@@ -17,6 +17,7 @@ from app.workers.celery_app import celery_app
 from app.db.base import async_session_maker, engine
 from app.models.raw_log import RawLog, LogIntent
 from app.models.insight import InsightCard, InsightStatus
+from app.models.recommendation import Recommendation
 from app.models.user import User
 from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer2.privacy_sanitizer import privacy_sanitizer
@@ -24,6 +25,7 @@ from app.services.layer2.insight_distiller import insight_distiller
 from app.services.layer2.sharing_broker import sharing_broker
 from app.services.layer2.structural_analyzer import structural_analyzer, is_continuation_phrase
 from app.services.layer3.knowledge_store import knowledge_store
+from app.services.layer3.serendipity_matcher import serendipity_matcher
 from app.core.security import get_password_hash
 from app.core.config import settings
 
@@ -517,6 +519,52 @@ def process_log_for_insight(self, log_id: str):
 
                 await session.refresh(insight)
 
+                # Layer 3: Serendipity Matching
+                # マッチングは副作用として扱い、失敗してもインサイト生成結果は維持する
+                flash_team_saved_count = 0
+                try:
+                    matching_result = await serendipity_matcher.find_related_insights(
+                        current_input=log.content,
+                        user_id=log.user_id,
+                        exclude_ids=[str(insight.id)],
+                    )
+                    recommendations = matching_result.get("recommendations", [])
+                    team_proposals = [
+                        rec for rec in recommendations
+                        if rec.get("category") == "TEAM_PROPOSAL"
+                    ]
+
+                    if team_proposals:
+                        for proposal in team_proposals:
+                            session.add(
+                                Recommendation(
+                                    user_id=log.user_id,
+                                    source_insight_id=insight.id,
+                                    category=proposal.get("category", "TEAM_PROPOSAL"),
+                                    title=proposal.get("title", "Flash Team Proposal"),
+                                    content=proposal,
+                                    score=float(proposal.get("relevance_score", 0)),
+                                )
+                            )
+                        await session.commit()
+                        flash_team_saved_count = len(team_proposals)
+                        logger.info(
+                            "🚀 Flash Team Proposal Generated! "
+                            "log_id=%s insight_id=%s proposals=%s",
+                            log_id,
+                            insight.id,
+                            flash_team_saved_count,
+                        )
+                except Exception as match_err:
+                    await session.rollback()
+                    logger.warning(
+                        "Serendipity matching failed: log_id=%s insight_id=%s error=%s",
+                        log_id,
+                        insight.id,
+                        str(match_err),
+                        exc_info=True,
+                    )
+
                 promotion_type = "推奨" if should_propose else "通常"
                 logger.info(
                     f"Insight pipeline complete: log_id={log_id}, "
@@ -532,6 +580,7 @@ def process_log_for_insight(self, log_id: str):
                     "should_propose": should_propose,
                     "sharing_value_score": sharing_score,
                     "promotion_type": promotion_type,
+                    "flash_team_proposals_saved": flash_team_saved_count,
                 }
 
             except Exception as e:
