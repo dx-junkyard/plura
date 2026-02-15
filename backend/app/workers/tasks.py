@@ -519,6 +519,44 @@ def process_log_for_insight(self, log_id: str):
 
                 await session.refresh(insight)
 
+                # Layer 3: Knowledge Store (Vector DB) への保存
+                # ベクトルDB障害はメイン処理を失敗扱いにしない
+                try:
+                    logger.info(f"Storing insight to vector DB: {insight.id}")
+                    vector_id = await knowledge_store.store_insight(
+                        insight_id=str(insight.id),
+                        insight={
+                            "title": insight.title,
+                            "context": insight.context,
+                            "problem": insight.problem,
+                            "solution": insight.solution,
+                            "summary": insight.summary,
+                            "topics": insight.topics or [],
+                            "tags": insight.tags or [],
+                        },
+                    )
+                    if vector_id:
+                        insight.vector_id = vector_id
+                        await session.commit()
+                        logger.info(
+                            "Successfully stored vector: insight_id=%s vector_id=%s",
+                            insight.id,
+                            vector_id,
+                        )
+                    else:
+                        logger.warning(
+                            "Vector DB store returned no vector_id: insight_id=%s",
+                            insight.id,
+                        )
+                except Exception as vector_err:
+                    await session.rollback()
+                    logger.warning(
+                        "Failed to store insight to vector DB: insight_id=%s error=%s",
+                        insight.id,
+                        str(vector_err),
+                        exc_info=True,
+                    )
+
                 # Layer 3: Serendipity Matching
                 # マッチングは副作用として扱い、失敗してもインサイト生成結果は維持する
                 flash_team_saved_count = 0
