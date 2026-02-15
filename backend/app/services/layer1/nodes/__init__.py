@@ -1,5 +1,5 @@
 """
-MINDYARD - Conversation Graph Nodes
+PLURA - Conversation Graph Nodes
 LangGraphの各処理ノード
 """
 from app.services.layer1.nodes.chat_node import run_chat_node

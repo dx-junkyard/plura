@@ -1,5 +1,5 @@
 """
-MINDYARD - Serendipity Matcher
+PLURA - Serendipity Matcher
 Layer 3: ユーザーが「検索」する前に、関連情報を提示するプッシュ型レコメンデーション
 
 Retrieve & Evaluate パターン:

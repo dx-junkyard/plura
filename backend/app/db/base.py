@@ -1,5 +1,5 @@
 """
-MINDYARD - Database Base
+PLURA - Database Base
 SQLAlchemy基盤設定
 """
 from datetime import datetime, timezone

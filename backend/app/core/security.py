@@ -1,5 +1,5 @@
 """
-MINDYARD - Security Module
+PLURA - Security Module
 認証・認可とセキュリティ機能
 """
 import secrets

@@ -1,5 +1,5 @@
 """
-MINDYARD - Authentication Endpoints
+PLURA - Authentication Endpoints
 ユーザー認証API
 """
 from datetime import timedelta

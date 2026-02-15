@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - ThoughtStream Component
+ * PLURA - ThoughtStream Component
  * Layer 1: チャット形式の入力UI（ノン・ジャッジメンタル応答）
  */
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -429,7 +429,7 @@ ${probing_question}
 🔗 関係性: ${relationshipLabel}
 
 ---
-MINDYARD で思考を整理しました`;
+PLURA で思考を整理しました`;
 
     try {
       await navigator.clipboard.writeText(shareText);

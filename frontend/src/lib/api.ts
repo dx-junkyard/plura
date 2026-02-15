@@ -1,5 +1,5 @@
 /**
- * MINDYARD - API Client
+ * PLURA - API Client
  */
 import axios, { AxiosInstance } from 'axios';
 import type {

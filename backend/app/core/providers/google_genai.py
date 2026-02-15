@@ -1,5 +1,5 @@
 """
-MINDYARD - Google Gen AI Provider
+PLURA - Google Gen AI Provider
 Google Gen AI SDK (google-genai) を使用するLLMプロバイダー実装
 """
 import json

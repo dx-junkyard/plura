@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * MINDYARD - パスワード再設定
+ * PLURA - パスワード再設定
  * 現在はプレースホルダー。メール送信などの実装は今後対応。
  */
 import Link from 'next/link';

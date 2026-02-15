@@ -1,5 +1,5 @@
 """
-MINDYARD - Conversation Endpoints
+PLURA - Conversation Endpoints
 LangGraph動的ルーティングによる会話API
 
 UX機能:

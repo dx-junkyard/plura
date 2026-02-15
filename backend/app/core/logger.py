@@ -1,5 +1,5 @@
 """
-MINDYARD - Structured Tracing Logger
+PLURA - Structured Tracing Logger
 trace_id を自動付与する構造化ロガーと、処理の開始/終了を記録するデコレータ
 
 ログ出力項目: timestamp, level, trace_id, module, message, metadata

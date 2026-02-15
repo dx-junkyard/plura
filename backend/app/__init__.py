@@ -1,3 +1,3 @@
 """
-MINDYARD Backend Application
+PLURA Backend Application
 """

@@ -1,5 +1,5 @@
 """
-MINDYARD - Core Configuration
+PLURA - Core Configuration
 システム全体の設定を管理
 """
 import json
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    app_name: str = "MINDYARD"
+    app_name: str = "PLURA"
     app_version: str = "0.1.0"
     debug: bool = False
     environment: str = "development"

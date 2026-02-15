@@ -1,5 +1,5 @@
 """
-MINDYARD - User Model
+PLURA - User Model
 ユーザー管理モデル
 """
 import uuid

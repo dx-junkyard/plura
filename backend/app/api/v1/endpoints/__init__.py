@@ -1,3 +1,3 @@
 """
-MINDYARD - API v1 Endpoints
+PLURA - API v1 Endpoints
 """

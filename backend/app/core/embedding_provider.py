@@ -1,5 +1,5 @@
 """
-MINDYARD - Embedding Provider Abstract Interface
+PLURA - Embedding Provider Abstract Interface
 マルチプロバイダー対応のEmbedding抽象インターフェース
 """
 from abc import ABC, abstractmethod

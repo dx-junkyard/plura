@@ -1,5 +1,5 @@
 """
-MINDYARD - Insight Card Schemas
+PLURA - Insight Card Schemas
 Layer 3: Public Plaza のスキーマ
 """
 import uuid

@@ -1,5 +1,5 @@
 """
-MINDYARD - Empathy Node
+PLURA - Empathy Node
 感情的な入力に対して共感を示すノード
 
 共感特化のプロンプトで、聞く姿勢を重視した応答を生成する。

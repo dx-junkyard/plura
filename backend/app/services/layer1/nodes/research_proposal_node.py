@@ -1,5 +1,5 @@
 """
-MINDYARD - Research Proposal Node
+PLURA - Research Proposal Node
 調査計画書（Research Brief）を生成するノード
 
 「Deep Research を実行する」ボタン押下後の最初のフェーズ。
@@ -15,7 +15,7 @@ from app.core.logger import get_traced_logger
 
 logger = get_traced_logger("ResearchProposalNode")
 
-_PROPOSAL_PROMPT = """あなたは MINDYARD の Deep Research プランナーです。
+_PROPOSAL_PROMPT = """あなたは PLURA の Deep Research プランナーです。
 ユーザーの会話履歴（入力とAIの回答）を分析し、
 **個人的な文脈を排除した客観的な調査計画書**を作成してください。
 
