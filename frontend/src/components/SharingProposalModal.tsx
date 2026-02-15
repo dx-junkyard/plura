@@ -5,7 +5,7 @@
  * Layer 2: 推奨インサイトの承認/拒否UI
  */
 import { useState } from 'react';
-import { X, Share2, XCircle, Sparkles } from 'lucide-react';
+import { X, Share2, XCircle, Sparkles, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SharingProposal } from '@/types';
 
@@ -104,6 +104,15 @@ export function SharingProposalModal({
                 ))}
               </div>
             )}
+          </div>
+
+          {/* プライバシー安心メッセージ */}
+          <div className="flex items-start gap-2 mt-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+            <ShieldCheck className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+            <p className="text-xs text-blue-700 leading-relaxed">
+              個人を特定する情報（名前・日付・固有名詞など）は自動で除去・一般化されています。
+              共有される内容は上記のプレビューの通りです。
+            </p>
           </div>
 
           {/* スコア表示 */}
