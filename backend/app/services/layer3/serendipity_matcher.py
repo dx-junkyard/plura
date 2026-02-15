@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 
 from app.core.llm import extract_json_from_text, llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
-from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer3.knowledge_store import knowledge_store
 
 logger = logging.getLogger(__name__)
@@ -113,16 +112,12 @@ class SerendipityMatcher:
                 "trigger_reason": "insufficient_content",
             }
 
-        # コンテキスト解析
-        current_context = await context_analyzer.analyze(current_input)
-        filter_tags = self._build_filter_tags(current_context)
-
         # --- Step 1: Broad Retrieval (広域探索) ---
         broad_candidates = await knowledge_store.search_similar(
             query=current_input,
             limit=BROAD_SEARCH_LIMIT,
             score_threshold=BROAD_SCORE_THRESHOLD,
-            filter_tags=filter_tags,
+            filter_tags=None,
         )
 
         # 除外IDをフィルタリング

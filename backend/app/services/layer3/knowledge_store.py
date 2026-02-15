@@ -38,8 +38,8 @@ class KnowledgeStore:
         if self._embedding_provider is None:
             try:
                 self._embedding_provider = embedding_manager.get_provider()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to get embedding provider: {e}", exc_info=True)
         return self._embedding_provider
 
     async def initialize(self):
@@ -73,6 +73,7 @@ class KnowledgeStore:
             self._initialized = True
 
         except Exception as e:
+            logger.error(f"Failed to Qdrant connection: {e}", exc_info=True)
             # Qdrantに接続できない場合はNoneのまま
             self.qdrant_client = None
 
@@ -86,6 +87,7 @@ class KnowledgeStore:
             await embedding_provider.initialize()
             return await embedding_provider.embed_text(text)
         except Exception as e:
+            logger.error(f"Failed to generate embedding: {e}", exc_info=True)
             return None
 
     async def store_insight(self, insight_id: str, insight: Dict) -> Optional[str]:
@@ -136,6 +138,7 @@ class KnowledgeStore:
             return vector_id
 
         except Exception as e:
+            logger.error(f"Failed to qdrant upsert: {e}", exc_info=True)
             return None
 
     async def search_similar(
