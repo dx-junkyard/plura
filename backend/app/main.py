@@ -39,6 +39,17 @@ async def lifespan(app: FastAPI):
     """アプリケーションのライフサイクル管理"""
     logger.info("Starting MINDYARD application", version=settings.app_version)
 
+    # --- 起動時ログ追加 ---
+    logger.info("════════════════════════════════════════")
+    logger.info("🤖 PLURA AI Configuration Status")
+    logger.info(f"• FAST Tier    : {settings.get_llm_config('fast')}")
+    logger.info(f"• BALANCED Tier: {settings.get_llm_config('balanced')}")
+    logger.info(f"• DEEP Tier    : {settings.get_llm_config('deep')}")
+    logger.info(f"• OpenAI Key   : {'Set' if settings.openai_api_key else 'Not Set'}")
+    logger.info(f"• Google Proj  : {settings.google_cloud_project or 'Not Set'}")
+    logger.info("════════════════════════════════════════")
+    # ---------------------
+
     # データベーステーブルの作成（開発用）
     if settings.environment == "development":
         async with engine.begin() as conn:

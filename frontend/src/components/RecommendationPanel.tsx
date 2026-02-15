@@ -3,11 +3,13 @@
 /**
  * MINDYARD - Recommendation Panel
  * Serendipity Matcher による「副作用的」レコメンデーション表示
+ * TEAM_PROPOSAL 対応: Flash Team Formation カード
  */
 import { useRouter } from 'next/navigation';
-import { X, Sparkles, ThumbsUp } from 'lucide-react';
+import { X, Sparkles } from 'lucide-react';
 import { useRecommendationStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
+import { TeamProposalCard } from './TeamProposalCard';
 
 export function RecommendationPanel() {
   const router = useRouter();
@@ -18,6 +20,24 @@ export function RecommendationPanel() {
     return null;
   }
 
+  // TEAM_PROPOSAL が含まれているか判定
+  const teamProposal = recommendations.find(
+    (r) => r.category === 'TEAM_PROPOSAL'
+  );
+
+  // TEAM_PROPOSAL の場合は専用カードを表示
+  if (teamProposal) {
+    return (
+      <div className="fixed bottom-24 right-4 w-96 z-50 animate-slide-up">
+        <TeamProposalCard
+          proposal={teamProposal}
+          onDismiss={hideRecommendations}
+        />
+      </div>
+    );
+  }
+
+  // 通常のレコメンデーション表示
   return (
     <div className="fixed bottom-24 right-4 w-80 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden animate-slide-up">
       {/* ヘッダー */}

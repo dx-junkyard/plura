@@ -11,12 +11,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 # デフォルトのLLM設定
-DEFAULT_LLM_CONFIG_FAST = {"provider": "openai", "model": "gpt-5-nano"}
-DEFAULT_LLM_CONFIG_BALANCED = {"provider": "openai", "model": "gpt-5-mini"}
-DEFAULT_LLM_CONFIG_DEEP = {"provider": "openai", "model": "gpt-5.2"}
+DEFAULT_LLM_CONFIG_FAST = {"provider": "vertex", "model": "gemini-2.5-pro"}
+DEFAULT_LLM_CONFIG_BALANCED = {"provider": "vertex", "model": "gemini-2.5-flash"}
+DEFAULT_LLM_CONFIG_DEEP = {"provider": "vertex", "model": "gpt-5.2"}
 
 # デフォルトのEmbedding設定
-DEFAULT_EMBEDDING_CONFIG = {"provider": "openai", "model": "text-embedding-3-small"}
+DEFAULT_EMBEDDING_CONFIG = {"provider": "vertex", "model": "text-embedding-004"}
 
 
 class Settings(BaseSettings):

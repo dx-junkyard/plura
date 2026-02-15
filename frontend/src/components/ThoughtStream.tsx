@@ -304,25 +304,26 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
   // 送信ハンドラ
   const handleSubmit = async () => {
     if (!input.trim() || isSubmitting) return;
+    const submittedText = input.trim();
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
-      content: input.trim(),
+      content: submittedText,
       timestamp: new Date().toISOString(),
     };
 
     addMessage(userMessage);
     setInput('');
     setIsSubmitting(true);
-    clearRecommendations();
 
     try {
       const response: AckResponse = await api.createLog(
-        input.trim(),
+        submittedText,
         'text',
         continuingThreadId ?? undefined
       );
+      await fetchRecommendations(submittedText);
 
       const replyContent = response.conversation_reply || response.message;
       const replyType: ChatMessage['type'] = response.conversation_reply ? 'assistant' : 'system';

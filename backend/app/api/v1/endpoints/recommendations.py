@@ -2,7 +2,7 @@
 MINDYARD - Recommendation Endpoints
 Serendipity Matcher API
 """
-from typing import List, Optional
+from typing import Dict, List, Optional
 import uuid
 
 from fastapi import APIRouter, Depends, Query
@@ -21,6 +21,14 @@ class RecommendationRequest(BaseModel):
     exclude_ids: Optional[List[str]] = None
 
 
+class TeamMember(BaseModel):
+    """チーム提案メンバー"""
+    user_id: str
+    display_name: str
+    role: str
+    avatar_url: Optional[str] = None
+
+
 class RecommendationItem(BaseModel):
     """レコメンデーションアイテム"""
     id: str
@@ -29,6 +37,10 @@ class RecommendationItem(BaseModel):
     topics: List[str]
     relevance_score: int
     preview: str
+    category: Optional[str] = None  # "TEAM_PROPOSAL" for flash teams
+    reason: Optional[str] = None
+    team_members: Optional[List[TeamMember]] = None
+    project_name: Optional[str] = None
 
 
 class RecommendationResponse(BaseModel):

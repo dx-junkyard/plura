@@ -188,6 +188,13 @@ export interface ConversationResponse {
 }
 
 // Recommendations
+export interface TeamMember {
+  user_id: string;
+  display_name: string;
+  role: string;
+  avatar_url: string | null;
+}
+
 export interface RecommendationItem {
   id: string;
   title: string;
@@ -195,6 +202,10 @@ export interface RecommendationItem {
   topics: string[];
   relevance_score: number;
   preview: string;
+  category?: string | null;  // "TEAM_PROPOSAL" for flash teams
+  reason?: string | null;
+  team_members?: TeamMember[] | null;
+  project_name?: string | null;
 }
 
 export interface RecommendationResponse {
