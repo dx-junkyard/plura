@@ -4,9 +4,11 @@
  * PLURA - Team Proposal Card
  * Flash Team Formation: AIによるチーム提案カード
  */
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Users, Zap, ArrowRight, User } from 'lucide-react';
+import { Users, Zap, ArrowRight, User, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
 import type { RecommendationItem } from '@/types';
 
 interface TeamProposalCardProps {
@@ -17,9 +19,27 @@ interface TeamProposalCardProps {
 export function TeamProposalCard({ proposal, onDismiss }: TeamProposalCardProps) {
   const router = useRouter();
   const members = proposal.team_members ?? [];
+  const [isJoining, setIsJoining] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleJoin = () => {
-    router.push(`/projects/${proposal.id}`);
+  const handleJoin = async () => {
+    setIsJoining(true);
+    setError(null);
+    try {
+      const project = await api.createProject({
+        name: proposal.project_name || proposal.title,
+        description: proposal.reason || proposal.preview,
+        recommendation_id: proposal.id,
+        team_members: members,
+        topics: proposal.topics,
+        reason: proposal.reason ?? undefined,
+      });
+      router.push(`/projects/${project.id}`);
+    } catch (err) {
+      console.error('Failed to create project:', err);
+      setError('プロジェクトの作成に失敗しました');
+      setIsJoining(false);
+    }
   };
 
   return (
@@ -103,25 +123,42 @@ export function TeamProposalCard({ proposal, onDismiss }: TeamProposalCardProps)
           </div>
         )}
 
+        {/* エラー表示 */}
+        {error && (
+          <p className="text-xs text-red-500">{error}</p>
+        )}
+
         {/* アクションボタン */}
         <div className="flex gap-2 pt-1">
           <button
             onClick={handleJoin}
+            disabled={isJoining}
             className={cn(
               'flex-1 flex items-center justify-center gap-2',
               'px-4 py-2.5 rounded-lg font-semibold text-sm',
               'bg-primary-600 text-white',
               'hover:bg-primary-700 active:bg-primary-800',
-              'transition-colors shadow-sm'
+              'transition-colors shadow-sm',
+              isJoining && 'opacity-60 cursor-not-allowed'
             )}
           >
-            <Users className="w-4 h-4" />
-            Join Project
-            <ArrowRight className="w-4 h-4" />
+            {isJoining ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                作成中...
+              </>
+            ) : (
+              <>
+                <Users className="w-4 h-4" />
+                Join Project
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
           {onDismiss && (
             <button
               onClick={onDismiss}
+              disabled={isJoining}
               className={cn(
                 'px-4 py-2.5 rounded-lg text-sm',
                 'text-gray-500 hover:bg-gray-100',
