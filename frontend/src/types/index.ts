@@ -1,55 +1,67 @@
 /**
- * PLURA - Type Definitions
+ * PLURA - Type Definitions (Auto-sync Adapter)
+ *
+ * このファイルは Backend の Pydantic モデルから自動生成された schema.d.ts のアダプターです。
+ * 直接手書きで型を定義せず、必ず schema.d.ts 経由で型を参照してください。
+ *
+ * 型の更新手順:
+ *   1. Backend の schemas/*.py を修正
+ *   2. `python backend/scripts/extract_openapi.py --output backend/openapi.json` を実行
+ *   3. frontend で `npm run gen:types` を実行
+ *   4. 以下のマッピングに変更が必要な場合のみ、このファイルを修正する
  */
 
+import type { components } from './schema';
+
+// =============================================================================
 // User
-export interface User {
-  id: string;
-  email: string;
-  display_name: string | null;
-  avatar_url: string | null;
-  is_active: boolean;
-  is_verified: boolean;
-  created_at: string;
-  updated_at: string;
-}
+// =============================================================================
 
-export interface Token {
-  access_token: string;
-  token_type: string;
-  user: User;
-}
+/** ユーザープロフィール (Backend: UserResponse) */
+export type User = components['schemas']['UserResponse'];
 
+/** 認証トークン (Backend: Token) */
+export type Token = components['schemas']['Token'];
+
+// =============================================================================
 // Log Intent
-export type LogIntent = 'log' | 'vent' | 'structure' | 'state' | 'deep_research';
+// =============================================================================
 
-// Model Info
+/** ログの意図分類 (Backend: LogIntent) */
+export type LogIntent = components['schemas']['LogIntent'];
+
+// =============================================================================
+// Structural Analysis
+// Frontend が独自に詳細型付けしている（BackendはJSON型で返す）
+// =============================================================================
+
+/** LLM使用モデル情報（Backend のレスポンスには含まれず Frontend のみで利用） */
 export interface ModelInfo {
   tier: 'deep' | 'balanced' | 'fast';
   model: string;
   is_reasoning: boolean;
 }
 
-// Structural Analysis Result
+/** 構造的分析結果（structural_analysis フィールドの具体型） */
 export interface StructuralAnalysis {
   relationship_type: 'ADDITIVE' | 'PARALLEL' | 'CORRECTION' | 'NEW';
   relationship_reason: string;
   updated_structural_issue: string;
   probing_question: string;
-  model_info?: ModelInfo;  // 使用したモデル情報
+  model_info?: ModelInfo;
 }
 
+// =============================================================================
 // Raw Log (Layer 1)
-export interface RawLog {
-  id: string;
-  user_id: string;
-  thread_id: string | null;  // 同一会話の先頭ログ id（続きのとき）
-  content: string;
-  content_type: string;
-  intent: LogIntent | null;
-  emotions: string[] | null;
-  emotion_scores: Record<string, number> | null;
-  topics: string[] | null;
+// structural_analysis / metadata_analysis は Backend では dict 型のため、
+// Omit + 上書きで Frontend の詳細型付けを維持する。
+// =============================================================================
+
+/** Raw ログ (Backend: RawLogResponse, structural_analysis/metadata_analysis を詳細型付け) */
+export type RawLog = Omit<
+  components['schemas']['RawLogResponse'],
+  'structural_analysis' | 'metadata_analysis'
+> & {
   structural_analysis: StructuralAnalysis | null;
   metadata_analysis: {
     deep_research?: {
@@ -65,73 +77,62 @@ export interface RawLog {
     };
     [key: string]: unknown;
   } | null;
-  assistant_reply: string | null;  // 会話エージェントの自然言語返答
-  is_analyzed: boolean;
-  is_processed_for_insight: boolean;
-  is_structure_analyzed: boolean;
-  created_at: string;
-  updated_at: string;
-}
+};
 
-export interface RawLogListResponse {
+/** Raw ログ一覧レスポンス */
+export type RawLogListResponse = Omit<
+  components['schemas']['RawLogListResponse'],
+  'items'
+> & {
   items: RawLog[];
-  total: number;
-  page: number;
-  page_size: number;
-}
+};
 
-export interface AckResponse {
-  message: string;
-  log_id: string;
-  thread_id: string;  // スレッドID（次の送信で継続するために使用）
-  timestamp: string;
-  transcribed_text?: string;  // 音声入力時の文字起こしテキスト
-  skip_structural_analysis?: boolean;
-  conversation_reply?: string; // 会話エージェントが生成した自然な返答（ラリー用）
-  requires_research_consent?: boolean; // Deep Research の提案が含まれている場合 true
-  research_log_id?: string; // Deep Research 結果のポーリング先ログID
-}
+/** ログ作成後の応答 (Backend: AckResponse) */
+export type AckResponse = components['schemas']['AckResponse'];
 
+// =============================================================================
 // Insight Card (Layer 3)
-export type InsightStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected';
+// =============================================================================
 
-export interface InsightCard {
-  id: string;
-  author_id: string;
-  title: string;
-  context: string | null;
-  problem: string | null;
-  solution: string | null;
-  summary: string;
-  topics: string[] | null;
-  tags: string[] | null;
-  sharing_value_score: number;
-  status: InsightStatus;
-  view_count: number;
-  thanks_count: number;
-  created_at: string;
-  updated_at: string;
-  published_at: string | null;
-}
+/** インサイトの状態 (Backend: InsightStatus) */
+export type InsightStatus = components['schemas']['InsightStatus'];
 
-export interface InsightCardListResponse {
+/** インサイトカード (Backend: InsightCardResponse) */
+export type InsightCard = components['schemas']['InsightCardResponse'];
+
+/** インサイト一覧レスポンス */
+export type InsightCardListResponse = Omit<
+  components['schemas']['InsightCardListResponse'],
+  'items'
+> & {
   items: InsightCard[];
-  total: number;
-  page: number;
-  page_size: number;
-}
+};
 
-export interface SharingProposal {
+/** 共有提案 (Backend: SharingProposal) */
+export type SharingProposal = Omit<
+  components['schemas']['SharingProposal'],
+  'insight'
+> & {
   insight: InsightCard;
-  message: string;
-  original_content_preview: string | null;
-}
+};
 
+// =============================================================================
 // Conversation (LangGraph Hypothesis-Driven Routing)
-export type ConversationIntent = 'chat' | 'empathy' | 'knowledge' | 'deep_dive' | 'brainstorm' | 'probe' | 'state_share';
+// =============================================================================
 
+/** 会話の意図分類 (Backend: ConversationIntent) */
+export type ConversationIntent = components['schemas']['ConversationIntent'];
+
+/**
+ * 前回の評価分類（Backend のスキーマには含まれず Frontend のみで利用）
+ * IntentHypothesis の内部フィールド用
+ */
 export type PreviousEvaluation = 'positive' | 'negative' | 'pivot' | 'none';
 
+/**
+ * 仮説駆動ルーティング結果（Backend のスキーマには含まれず Frontend のみで利用）
+ * LangGraph 内部状態の可視化用
+ */
 export interface IntentHypothesis {
   previous_evaluation: PreviousEvaluation;
   primary_intent: ConversationIntent;
@@ -142,75 +143,35 @@ export interface IntentHypothesis {
   reasoning: string;
 }
 
-export interface IntentBadge {
-  intent: ConversationIntent;
-  confidence: number;
-  label: string;
-  icon: string;
-}
+/** インテントバッジ（UI 表示用） (Backend: IntentBadge) */
+export type IntentBadge = components['schemas']['IntentBadge'];
 
-export type BackgroundTaskStatus = 'queued' | 'running' | 'completed' | 'failed';
+/** バックグラウンドタスクの状態 */
+export type BackgroundTaskStatus = NonNullable<
+  components['schemas']['BackgroundTask']['status']
+>;
 
-export interface BackgroundTask {
-  task_id: string;
-  task_type: string;
-  status: BackgroundTaskStatus;
-  message: string;
-  result_log_id?: string; // 結果が保存される RawLog の ID（ポーリング用）
-}
+/** バックグラウンドタスク (Backend: BackgroundTask) */
+export type BackgroundTask = components['schemas']['BackgroundTask'];
 
-export interface ResearchPlan {
-  title: string;
-  topic: string;
-  scope: string;
-  perspectives: string[];
-  sanitized_query: string;
-}
+/** 調査計画書 (Backend: ResearchPlan) */
+export type ResearchPlan = components['schemas']['ResearchPlan'];
 
-export interface ConversationRequest {
-  message: string;
-  mode_override?: ConversationIntent;
-  research_approved?: boolean; // 提案フェーズ開始
-  research_plan_confirmed?: boolean; // 調査計画確定で実行開始
-  research_plan?: ResearchPlan; // 確認済みの調査計画書
-  thread_id?: string; // 会話スレッドID
-}
+/** 会話リクエスト (Backend: ConversationRequest) */
+export type ConversationRequest = components['schemas']['ConversationRequest'];
 
-export interface ConversationResponse {
-  response: string;
-  intent_badge: IntentBadge;
-  background_task: BackgroundTask | null;
-  user_id: string;
-  timestamp: string;
-  requires_research_consent?: boolean; // Deep Research の提案が含まれている場合 true
-  is_researching?: boolean; // Deep Research が非同期実行中の場合 true
-  research_plan?: ResearchPlan | null; // 調査計画書（ユーザー確認待ち）
-}
+/** 会話レスポンス (Backend: ConversationResponse) */
+export type ConversationResponse = components['schemas']['ConversationResponse'];
 
+// =============================================================================
 // Recommendations
-export interface TeamMember {
-  user_id: string;
-  display_name: string;
-  role: string;
-  avatar_url: string | null;
-}
+// =============================================================================
 
-export interface RecommendationItem {
-  id: string;
-  title: string;
-  summary: string;
-  topics: string[];
-  relevance_score: number;
-  preview: string;
-  category?: string | null;  // "TEAM_PROPOSAL" for flash teams
-  reason?: string | null;
-  team_members?: TeamMember[] | null;
-  project_name?: string | null;
-}
+/** チームメンバー (Backend: TeamMember) */
+export type TeamMember = components['schemas']['TeamMember'];
 
-export interface RecommendationResponse {
-  has_recommendations: boolean;
-  recommendations: RecommendationItem[];
-  trigger_reason: string;
-  display_message: string | null;
-}
+/** レコメンデーションアイテム (Backend: RecommendationItem) */
+export type RecommendationItem = components['schemas']['RecommendationItem'];
+
+/** レコメンデーションレスポンス (Backend: RecommendationResponse) */
+export type RecommendationResponse = components['schemas']['RecommendationResponse'];
