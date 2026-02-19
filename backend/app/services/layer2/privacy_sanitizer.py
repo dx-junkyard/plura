@@ -5,10 +5,12 @@ Layer 2: 個人特定につながる情報を除去・置換するフィルタ�
 正確性が重要なため、BALANCEDモデルを使用。
 """
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.llm import llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
+
+_UNSET: Any = object()  # sentinel: _provider の「未初期化」を None と区別するため
 
 
 class PrivacySanitizer:
@@ -23,7 +25,7 @@ class PrivacySanitizer:
     """
 
     def __init__(self):
-        self._provider: Optional[LLMProvider] = None
+        self._provider: Any = _UNSET  # _UNSET=未初期化, None=明示的にNULL設定
 
         # 正規表現パターン
         self.patterns = {
@@ -37,11 +39,11 @@ class PrivacySanitizer:
 
     def _get_provider(self) -> Optional[LLMProvider]:
         """LLMプロバイダーを取得（遅延初期化）"""
-        if self._provider is None:
+        if self._provider is _UNSET:
             try:
                 self._provider = llm_manager.get_client(LLMUsageRole.BALANCED)
             except Exception:
-                pass
+                self._provider = None
         return self._provider
 
     @property
