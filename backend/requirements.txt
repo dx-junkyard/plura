@@ -45,7 +45,7 @@ presidio-analyzer==2.2.351
 presidio-anonymizer==2.2.351
 
 # Audio Processing
-openai-whisper==20231117
+openai-whisper==20240930
 
 # Utilities
 httpx==0.26.0
