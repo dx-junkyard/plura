@@ -19,7 +19,9 @@ type Token = components['schemas']['Token']
 type UserResponse = components['schemas']['UserResponse']
 type SharingProposal = components['schemas']['SharingProposal']
 
-const API_BASE = '/api/v1'
+// Node.js テスト環境では window.location がないため絶対 URL が必要。
+// ブラウザ環境向けの相対パス版は browser.ts 側で Service Worker が解決する。
+const API_BASE = 'http://localhost/api/v1'
 
 // ==================== モックデータ (固定値) ====================
 

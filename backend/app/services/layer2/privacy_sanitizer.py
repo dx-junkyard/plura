@@ -5,10 +5,12 @@ Layer 2: 個人特定につながる情報を除去・置換するフィルタ�
 正確性が重要なため、BALANCEDモデルを使用。
 """
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.llm import llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
+
+_UNSET: Any = object()  # sentinel: _provider の「未初期化」を None と区別するため
 
 
 class PrivacySanitizer:
@@ -23,7 +25,7 @@ class PrivacySanitizer:
     """
 
     def __init__(self):
-        self._provider: Optional[LLMProvider] = None
+        self._provider: Any = _UNSET  # _UNSET=未初期化, None=明示的にNULL設定
 
         # 正規表現パターン
         self.patterns = {
@@ -37,11 +39,11 @@ class PrivacySanitizer:
 
     def _get_provider(self) -> Optional[LLMProvider]:
         """LLMプロバイダーを取得（遅延初期化）"""
-        if self._provider is None:
+        if self._provider is _UNSET:
             try:
                 self._provider = llm_manager.get_client(LLMUsageRole.BALANCED)
             except Exception:
-                pass
+                self._provider = None
         return self._provider
 
     @property
@@ -123,37 +125,22 @@ class PrivacySanitizer:
 
         return sanitized, replacements
 
-    async def _sanitize_fallback(self, content: str) -> tuple[str, dict]:
+    def _sanitize_fallback(self, content: str) -> Tuple[str, List[Dict]]:
         """LLMが利用できない場合のルールベースの匿名化"""
-        replacements = []
         sanitized = content
-
-        # 名前パターンの強化（敬称: さん, 様, くん, ちゃん, 氏, 部長, 課長, 社長 など）
-        # 日本語の漢字・ひらがな・カタカナ（2文字以上）に続く敬称を対象にする
-        name_pattern = re.compile(
-            r'([A-Z][a-z]+|[一-龠ぁ-んァ-ヶ]{2,})'  # 名前（アルファベット または 漢字/かな/カナ2文字以上）
-            r'(?P<suffix>さん|様|くん|ちゃん|氏|部長|課長|社長|先生)' # 敬称
-        )
-        
-        # ... 以下、マッチングと置換のロジック ...
-        for match in name_pattern.finditer(content):
+        replacements = []
+        pattern = re.compile(r'([一-龠ぁ-んァ-ヶ]{2,})(さん|様|氏|君|ちゃん|先生|部長|課長|社長)')
+        for match in pattern.finditer(content):
             original = match.group(0)
-            name_part = match.group(1)
-            suffix = match.group('suffix')
-            
-            placeholder = f"[NAME_{len(replacements) + 1}]"
-            # 敬称を残すかどうかはポリシーによりますが、テストを通すためには全体を置換
-            sanitized = sanitized.replace(original, f"{placeholder}{suffix}")
-            
+            suffix = match.group(2)
+            placeholder = "[担当者]"
+            sanitized = sanitized.replace(original, placeholder + suffix, 1)
             replacements.append({
+                "type": "name",
                 "original": original,
-                "replacement": placeholder,
-                "type": "name"
+                "replacement": placeholder
             })
-
-        # 電話番号やメールアドレスの既存パターン...
-        # ...
-        return sanitized, {"replacements": replacements}
+        return sanitized, replacements
 
     async def _apply_llm_generalization(self, content: str) -> Tuple[str, List[Dict]]:
         """LLMを使った固有名詞の一般化"""
