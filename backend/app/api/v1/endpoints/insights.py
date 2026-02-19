@@ -187,6 +187,7 @@ async def decide_sharing(
         vector_id = await knowledge_store.store_insight(
             insight_id=str(insight.id),
             insight={
+                "author_id": str(insight.author_id),
                 "title": insight.title,
                 "context": insight.context,
                 "problem": insight.problem,

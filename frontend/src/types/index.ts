@@ -214,3 +214,36 @@ export interface RecommendationResponse {
   trigger_reason: string;
   display_message: string | null;
 }
+
+// Projects (Flash Team)
+export interface ProjectResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  created_by: string;
+  recommendation_id: string | null;
+  team_members: TeamMember[];
+  topics: string[];
+  reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectListItem {
+  id: string;
+  name: string;
+  status: string;
+  topics: string[];
+  member_count: number;
+  created_at: string;
+}
+
+export interface ProjectCreateRequest {
+  name: string;
+  description?: string;
+  recommendation_id?: string;
+  team_members: TeamMember[];
+  topics: string[];
+  reason?: string;
+}
