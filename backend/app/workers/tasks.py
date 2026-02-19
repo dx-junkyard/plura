@@ -526,6 +526,7 @@ def process_log_for_insight(self, log_id: str):
                     vector_id = await knowledge_store.store_insight(
                         insight_id=str(insight.id),
                         insight={
+                            "author_id": str(insight.author_id),
                             "title": insight.title,
                             "context": insight.context,
                             "problem": insight.problem,
@@ -882,6 +883,7 @@ def run_deep_research_task(
                     vector_id = await knowledge_store.store_insight(
                         insight_id=str(insight.id),
                         insight={
+                            "author_id": str(insight.author_id),
                             "title": insight.title,
                             "context": insight.context,
                             "problem": insight.problem,

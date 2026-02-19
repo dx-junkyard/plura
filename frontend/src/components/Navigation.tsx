@@ -12,7 +12,7 @@ import {
   Bell,
   LogOut
 } from 'lucide-react';
-import { useAuthStore, useNotificationStore } from '@/lib/store';
+import { useAuthStore, useNotificationStore, useConversationStore } from '@/lib/store';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -40,8 +40,11 @@ export function Navigation() {
     return () => clearInterval(id);
   }, [fetchPendingCount]);
 
+  const clearConversation = useConversationStore((s) => s.clearConversation);
+
   const handleLogout = () => {
     api.logout();
+    clearConversation();
     logout();
   };
 

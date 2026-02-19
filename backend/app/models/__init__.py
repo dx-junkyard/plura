@@ -8,6 +8,7 @@ from app.models.insight import InsightCard, InsightStatus
 from app.models.recommendation import Recommendation
 from app.models.user_state import UserState
 from app.models.user_topic_profile import UserTopicProfile
+from app.models.project import Project, ProjectStatus
 
 __all__ = [
     "User",
@@ -19,4 +20,6 @@ __all__ = [
     "Recommendation",
     "UserState",
     "UserTopicProfile",
+    "Project",
+    "ProjectStatus",
 ]

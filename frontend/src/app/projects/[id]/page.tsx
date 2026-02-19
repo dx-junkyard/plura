@@ -3,8 +3,9 @@
 /**
  * PLURA - Project Lobby Page
  * Flash Team Formation: チーム結成後のプロジェクトロビー画面
+ * APIからプロジェクトデータを取得して表示する
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
@@ -14,10 +15,14 @@ import {
   Sparkles,
   User,
   MessageSquare,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
+import type { ProjectResponse, TeamMember } from '@/types';
 
-interface MockMessage {
+interface ChatMessage {
   id: string;
   sender: string;
   content: string;
@@ -25,68 +30,67 @@ interface MockMessage {
   isSystem?: boolean;
 }
 
-const MOCK_MESSAGES: MockMessage[] = [
-  {
-    id: '1',
-    sender: 'PLURA AI',
-    content:
-      'Flash Team が結成されました。プロジェクトの目標と各メンバーの役割を確認してください。',
-    timestamp: 'たった今',
-    isSystem: true,
-  },
-  {
-    id: '2',
-    sender: 'PLURA AI',
-    content:
-      'AIの分析により、このチームは技術・デザイン・ドメイン知識の3領域をカバーしています。それぞれの強みを活かした協働が期待されます。',
-    timestamp: 'たった今',
-    isSystem: true,
-  },
-];
-
-const MOCK_MEMBERS = [
-  {
-    name: 'Takeshi M.',
-    role: 'エンジニア',
-    specialty: 'バックエンド / インフラ',
-    color: 'bg-blue-500',
-    status: 'online',
-  },
-  {
-    name: 'Yuki S.',
-    role: 'デザイナー',
-    specialty: 'UX / プロダクトデザイン',
-    color: 'bg-emerald-500',
-    status: 'online',
-  },
-  {
-    name: 'Kenji A.',
-    role: 'ドメインエキスパート',
-    specialty: '業界知識 / 顧客理解',
-    color: 'bg-amber-500',
-    status: 'away',
-  },
-];
-
 export default function ProjectLobbyPage() {
   const params = useParams();
   const router = useRouter();
-  const [chatInput, setChatInput] = useState('');
-  const [messages, setMessages] = useState<MockMessage[]>(MOCK_MESSAGES);
-
   const projectId = params.id as string;
+
+  const [project, setProject] = useState<ProjectResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [chatInput, setChatInput] = useState('');
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  useEffect(() => {
+    const fetchProject = async () => {
+      try {
+        setLoading(true);
+        const data = await api.getProject(projectId);
+        setProject(data);
+
+        // 初期システムメッセージを生成
+        const initMessages: ChatMessage[] = [
+          {
+            id: 'sys-1',
+            sender: 'PLURA AI',
+            content: `Flash Team「${data.name}」が結成されました。プロジェクトの目標と各メンバーの役割を確認してください。`,
+            timestamp: new Date(data.created_at).toLocaleString('ja-JP'),
+            isSystem: true,
+          },
+        ];
+        if (data.reason) {
+          initMessages.push({
+            id: 'sys-2',
+            sender: 'PLURA AI',
+            content: data.reason,
+            timestamp: new Date(data.created_at).toLocaleString('ja-JP'),
+            isSystem: true,
+          });
+        }
+        setMessages(initMessages);
+      } catch (err) {
+        console.error('Failed to fetch project:', err);
+        setError('プロジェクトが見つかりませんでした');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProject();
+  }, [projectId]);
 
   const handleSendMessage = () => {
     if (!chatInput.trim()) return;
 
-    const newMessage: MockMessage = {
-      id: String(messages.length + 1),
+    const newMessage: ChatMessage = {
+      id: String(Date.now()),
       sender: 'あなた',
       content: chatInput,
-      timestamp: 'たった今',
+      timestamp: new Date().toLocaleString('ja-JP'),
     };
 
-    setMessages([...messages, newMessage]);
+    setMessages((prev) => [...prev, newMessage]);
     setChatInput('');
   };
 
@@ -96,6 +100,37 @@ export default function ProjectLobbyPage() {
       handleSendMessage();
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex items-center gap-3 text-gray-500">
+          <Loader2 className="w-6 h-6 animate-spin" />
+          <span>プロジェクトを読み込み中...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !project) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <AlertCircle className="w-12 h-12 text-red-400 mx-auto" />
+          <p className="text-gray-600">{error || 'プロジェクトが見つかりません'}</p>
+          <button
+            onClick={() => router.back()}
+            className="text-primary-600 hover:underline text-sm"
+          >
+            戻る
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const members: TeamMember[] = project.team_members ?? [];
+  const memberColors = ['bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500', 'bg-rose-500'];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -114,16 +149,27 @@ export default function ProjectLobbyPage() {
                 <div className="flex items-center gap-2">
                   <Zap className="w-5 h-5 text-primary-500" />
                   <h1 className="text-lg font-bold text-gray-900">
-                    Flash Team Project
+                    {project.name}
                   </h1>
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  AI-powered team formation
+                  Flash Team • {members.length}名
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">Project ID: {projectId.slice(0, 8)}...</span>
+              <span className={cn(
+                'text-xs px-2 py-1 rounded-full font-medium',
+                project.status === 'proposed' && 'bg-yellow-100 text-yellow-700',
+                project.status === 'active' && 'bg-green-100 text-green-700',
+                project.status === 'completed' && 'bg-blue-100 text-blue-700',
+                project.status === 'archived' && 'bg-gray-100 text-gray-500',
+              )}>
+                {project.status === 'proposed' && '提案中'}
+                {project.status === 'active' && 'アクティブ'}
+                {project.status === 'completed' && '完了'}
+                {project.status === 'archived' && 'アーカイブ'}
+              </span>
             </div>
           </div>
         </div>
@@ -144,21 +190,20 @@ export default function ProjectLobbyPage() {
               </div>
               <div className="p-4 space-y-3">
                 <p className="text-sm text-gray-700 leading-relaxed">
-                  このプロジェクトは、AIが分析した各メンバーの専門性と経験を元に自動生成されました。
-                  技術力、デザイン思考、ドメイン知識を組み合わせることで、従来の手動チーム編成では
-                  見落とされがちなシナジーを最大化します。
+                  {project.description || project.reason || 'AIが分析した各メンバーの専門性と経験を元に、最適なチームを自動編成しました。'}
                 </p>
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="text-xs px-2.5 py-1 bg-primary-100 text-primary-700 rounded-full font-medium">
-                    技術
-                  </span>
-                  <span className="text-xs px-2.5 py-1 bg-primary-100 text-primary-700 rounded-full font-medium">
-                    デザイン
-                  </span>
-                  <span className="text-xs px-2.5 py-1 bg-primary-100 text-primary-700 rounded-full font-medium">
-                    ドメイン知識
-                  </span>
-                </div>
+                {project.topics.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {project.topics.map((topic) => (
+                      <span
+                        key={topic}
+                        className="text-xs px-2.5 py-1 bg-primary-100 text-primary-700 rounded-full font-medium"
+                      >
+                        {topic}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -168,41 +213,37 @@ export default function ProjectLobbyPage() {
                 <div className="flex items-center gap-2 text-gray-700">
                   <Users className="w-4 h-4" />
                   <span className="text-sm font-semibold">
-                    チームメンバー ({MOCK_MEMBERS.length})
+                    チームメンバー ({members.length})
                   </span>
                 </div>
               </div>
               <div className="divide-y divide-gray-100">
-                {MOCK_MEMBERS.map((member) => (
-                  <div key={member.name} className="p-4 flex items-center gap-3">
+                {members.map((member, index) => (
+                  <div key={member.user_id} className="p-4 flex items-center gap-3">
                     <div className="relative">
                       <div
                         className={cn(
                           'w-12 h-12 rounded-full flex items-center justify-center text-white font-bold',
-                          member.color
+                          memberColors[index % memberColors.length]
                         )}
                       >
-                        <User className="w-6 h-6" />
-                      </div>
-                      {/* オンラインステータス */}
-                      <div
-                        className={cn(
-                          'absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white',
-                          member.status === 'online'
-                            ? 'bg-green-400'
-                            : 'bg-yellow-400'
+                        {member.avatar_url ? (
+                          <img
+                            src={member.avatar_url}
+                            alt={member.display_name}
+                            className="w-full h-full rounded-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-6 h-6" />
                         )}
-                      />
+                      </div>
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-800">
-                        {member.name}
+                        {member.display_name}
                       </p>
                       <p className="text-xs text-primary-600 font-medium">
                         {member.role}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {member.specialty}
                       </p>
                     </div>
                   </div>
@@ -220,7 +261,7 @@ export default function ProjectLobbyPage() {
                   <MessageSquare className="w-4 h-4" />
                   <span className="text-sm font-semibold">プロジェクトチャット</span>
                   <span className="text-xs text-gray-400 ml-auto">
-                    {MOCK_MEMBERS.length}名が参加中
+                    {members.length}名が参加中
                   </span>
                 </div>
               </div>
@@ -235,7 +276,6 @@ export default function ProjectLobbyPage() {
                       msg.sender === 'あなた' && 'flex-row-reverse'
                     )}
                   >
-                    {/* アバター */}
                     <div
                       className={cn(
                         'w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white text-xs font-bold',
@@ -253,7 +293,6 @@ export default function ProjectLobbyPage() {
                       )}
                     </div>
 
-                    {/* メッセージバブル */}
                     <div
                       className={cn(
                         'max-w-[70%] rounded-xl px-4 py-2.5',
