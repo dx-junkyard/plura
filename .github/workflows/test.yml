@@ -44,6 +44,8 @@ jobs:
           # 4. 残りのパッケージ群を通常通りインストール（whisperはインストール済みとしてスキップされます）
           pip install -r requirements.txt
 
+          # 5. テスト実行に必要な追加パッケージをインストール
+          pip install aiosqlite
 
       - name: Run unit tests
         run: |
