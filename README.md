@@ -375,7 +375,58 @@ GitHub Actions で以下の2段階チェックが走ります。
 | ワークフロー | トリガー | 内容 |
 |-------------|---------|------|
 | `test.yml` | 全 push / PR | ユニットテスト + カバレッジ |
-| `quality-gate.yml` | `backend/` 変更を含む PR | ルールベース評価（常時）+ LLM 評価（`eval` ラベル付き PR のみ） |
+| `quality-gate.yml` | `backend/` 変更を含む push / PR | ルールベース評価（常時・LLM 不要） |
+| `quality-gate.yml` | 手動実行（`workflow_dispatch`）+ `use_llm=true` | LLM-as-a-Judge 評価（APIコストが発生） |
+
+### 品質評価（LLM-as-a-Judge）運用ルール
+
+#### 目的と概要
+
+LLM-as-a-Judge は、各コンポーネントの出力品質を LLM（GPT等）が「裁判官」として 1〜10 点で自動採点するフレームワークです。ルールベースでは計測しにくい「自然さ」「文脈保持率」「抽象化の適切さ」といった定性的な品質を定量化できます。
+
+#### 通常の Push / PR では LLM 評価を実行しない
+
+LLM API の呼び出しはトークンコストが発生するため、**通常の push や Pull Request では LLM 評価を実行しません。**
+`quality-gate.yml` の自動トリガーでは、常に **ルールベース評価**（`--use-llm` なし）のみが実行されます。
+
+#### LLM 評価を実行するタイミング
+
+以下のような場面で、手動でLLM評価を実行することを推奨します。
+
+- `main` または `development` ブランチへのマージ前（品質最終確認）
+- Layer 2（Privacy Sanitizer / Insight Distiller）のプロンプトを大幅に変更したとき
+- Golden Dataset を更新・追加したとき
+- 定期的な品質ベースライン確認（例: 週次）
+
+#### CIでの手動実行手順（GitHub Actions）
+
+1. GitHub リポジトリの **Actions** タブを開く
+2. 左サイドバーから **Quality Gate (LLM-as-a-Judge)** を選択
+3. 右上の **Run workflow** ボタンをクリック
+4. ブランチを選択し、**`use_llm`** のチェックボックスを **オン** にする
+5. **Run workflow** を実行
+
+> `use_llm` をオフのまま実行した場合はルールベース評価のみが走ります（コストゼロ）。
+
+#### ローカルでの実行コマンド
+
+```bash
+cd backend
+
+# ルールベース評価のみ（LLM 不要・コストゼロ）
+python -m tests.evaluators.run_evaluation --all
+
+# LLM Judge を使用した本格評価（OPENAI_API_KEY が必要）
+python -m tests.evaluators.run_evaluation --all --use-llm
+
+# 特定コンポーネントのみ LLM 評価
+python -m tests.evaluators.run_evaluation --component privacy_sanitizer --use-llm
+
+# CI モード（pass_rate < 70% で非ゼロ終了コード）
+python -m tests.evaluators.run_evaluation --all --use-llm --ci
+```
+
+> **注意:** `--use-llm` を指定する場合は、環境変数 `OPENAI_API_KEY`（または Vertex AI 設定）が正しく設定されている必要があります。
 
 ### テストディレクトリ構成
 

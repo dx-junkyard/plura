@@ -10,9 +10,26 @@ on:
       - "backend/tests/evaluators/**"
       - "backend/tests/golden_datasets/**"
 
+  push:
+    branches:
+      - main
+      - development
+    paths:
+      - "backend/app/services/**"
+      - "backend/tests/evaluators/**"
+      - "backend/tests/golden_datasets/**"
+
+  # 手動トリガー: use_llm=true の場合のみ LLM Judge 評価が走る
+  workflow_dispatch:
+    inputs:
+      use_llm:
+        description: "LLM Judge を使用した評価を実行する（OpenAI APIコストが発生します）"
+        type: boolean
+        default: false
+
 jobs:
   # ============================================================
-  # Rule-based evaluation: 全 PR で実行（LLM 不要）
+  # Rule-based evaluation: push / PR では常時実行（LLM 不要）
   # ============================================================
   rule-based-eval:
     name: Rule-Based Evaluation
@@ -56,12 +73,13 @@ jobs:
           path: backend/tests/eval_reports/
 
   # ============================================================
-  # LLM-as-a-Judge evaluation: 'eval' ラベル付き PR のみ実行
+  # LLM-as-a-Judge evaluation:
+  #   手動トリガー（workflow_dispatch）かつ use_llm=true の場合のみ実行
   # ============================================================
   llm-eval:
     name: LLM-as-a-Judge Evaluation
     runs-on: ubuntu-latest
-    if: contains(github.event.pull_request.labels.*.name, 'eval')
+    if: github.event_name == 'workflow_dispatch' && inputs.use_llm == true
 
     defaults:
       run:
