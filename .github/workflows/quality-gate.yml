@@ -55,9 +55,13 @@ jobs:
           pip install --no-build-isolation openai-whisper==20240930
           pip install -r requirements.txt
 
-      - name: Run rule-based evaluation (all components)
+      - name: Run LLM-as-a-Judge Evaluation
         run: |
-          python -m tests.evaluators.run_evaluation --all --ci
+          if [ "${{ github.event.inputs.use_llm }}" = "true" ]; then
+            python -m tests.evaluators.run_evaluation --all --use-llm --ci
+          else
+            python -m tests.evaluators.run_evaluation --component privacy_sanitizer --ci
+          fi
         env:
           PYTHONPATH: .
           DATABASE_URL: "sqlite+aiosqlite:///./test.db"
