@@ -1,0 +1,292 @@
+{
+  "component": "InsightDistiller",
+  "version": "1.0",
+  "description": "InsightDistiller のテストケース。高品質な知見になるべき入力と、not_suitable（雑談・短文・テスト）と判定すべき入力を網羅する。",
+  "cases": [
+    {
+      "id": "ID-001",
+      "input": {
+        "text": "スクラムのスプリントプランニングでベロシティの見積もり精度を上げるには、過去3スプリントの平均を使いつつ、チームの祝日や欠席を考慮することが重要だと気づいた。これによりコミット率が20%向上した。",
+        "context": { "intent": "knowledge", "emotion": "positive" }
+      },
+      "expected": {
+        "is_suitable": true,
+        "quality_score_min": 70,
+        "expected_title_keywords": ["スクラム", "スプリント", "ベロシティ"],
+        "expected_topics": ["アジャイル開発", "スプリントプランニング"]
+      },
+      "tags": ["suitable", "agile", "data_backed", "actionable"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-002",
+      "input": {
+        "text": "新しいバックエンドエンジニアのオンボーディングを効率化するため、ドキュメントをLLMに読み込ませてチャットボット型のガイドを作った。新人の質問数が60%減り、既存メンバーの割り込みも大幅に減少した。",
+        "context": { "intent": "knowledge", "emotion": "positive" }
+      },
+      "expected": {
+        "is_suitable": true,
+        "quality_score_min": 75,
+        "expected_topics": ["オンボーディング", "LLM活用", "チーム効率化"]
+      },
+      "tags": ["suitable", "tooling", "innovation", "measurable_impact"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-003",
+      "input": {
+        "text": "Reactアプリのバンドルサイズを削減するため、Webpackのコード分割（Code Splitting）とDynamic Importを導入した。初期ロード時間が40%短縮し、モバイルユーザーの直帰率が改善した。",
+        "context": { "intent": "knowledge", "emotion": "neutral" }
+      },
+      "expected": {
+        "is_suitable": true,
+        "quality_score_min": 80,
+        "expected_topics": ["React", "パフォーマンス最適化", "フロントエンド"]
+      },
+      "tags": ["suitable", "frontend", "performance", "technical"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-004",
+      "input": {
+        "text": "プロダクトマネージャーとエンジニアの間にある「なぜこの機能が必要か」というコンテキストのギャップが、手戻りの主要因だと気づいた。チケットに「背景・目的・成功指標」を必須項目として追加したところ、レビューでの手戻りが半減した。",
+        "context": { "intent": "deep_dive", "emotion": "neutral" }
+      },
+      "expected": {
+        "is_suitable": true,
+        "quality_score_min": 75,
+        "expected_topics": ["PM/エンジニア連携", "コンテキスト共有", "プロセス改善"]
+      },
+      "tags": ["suitable", "process_improvement", "communication", "cross_functional"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-005",
+      "input": {
+        "text": "A/Bテストで「無料トライアル」ボタンの色をグレーから緑に変えたところ、CTRが35%向上した。しかし6ヶ月後の有料転換率は変わらなかった。表面的な指標だけで判断すると本質的な改善を見誤る可能性がある。",
+        "context": { "intent": "knowledge", "emotion": "neutral" }
+      },
+      "expected": {
+        "is_suitable": true,
+        "quality_score_min": 80,
+        "expected_topics": ["A/Bテスト", "UX", "指標の解釈"]
+      },
+      "tags": ["suitable", "ab_testing", "metrics", "counterintuitive"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "ID-006",
+      "input": {
+        "text": "採用面接でカルチャーフィットを評価するため、「過去に倫理的な判断を迫られた経験を教えてください」という質問を追加した。この質問への回答パターンが、入社後6ヶ月での定着率と強い相関があることがわかった。",
+        "context": { "intent": "knowledge", "emotion": "positive" }
+      },
+      "expected": {
+        "is_suitable": true,
+        "quality_score_min": 75,
+        "expected_topics": ["採用", "カルチャーフィット", "定着率"]
+      },
+      "tags": ["suitable", "hiring", "retention", "validated_insight"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "ID-007",
+      "input": {
+        "text": "データベースのN+1問題を解消するため、GraphQLのDataLoaderパターンを導入した。APIレスポンスタイムが中央値で200msから30msに短縮した。クエリバッチ処理の設計には最初から検討が必要だと学んだ。",
+        "context": { "intent": "knowledge", "emotion": "positive" }
+      },
+      "expected": {
+        "is_suitable": true,
+        "quality_score_min": 78,
+        "expected_topics": ["GraphQL", "パフォーマンス", "データベース最適化"]
+      },
+      "tags": ["suitable", "backend", "performance", "technical"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-008",
+      "input": {
+        "text": "リモート環境での集中力維持のために、DeepWork時間を「コアタイム禁止時間帯（10時〜12時）」として設定し、Slackの通知を完全にオフにした。週の生産的作業時間が平均8時間増えた。",
+        "context": { "intent": "knowledge", "emotion": "positive" }
+      },
+      "expected": {
+        "is_suitable": true,
+        "quality_score_min": 70,
+        "expected_topics": ["リモートワーク", "集中力", "生産性"]
+      },
+      "tags": ["suitable", "productivity", "remote_work", "personal_improvement"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-009",
+      "input": {
+        "text": "顧客のチャーン（解約）分析をしたところ、解約の70%が初回利用から2週間以内に発生していた。この「魔の2週間」の改善にリソースを集中したところ、年間チャーンレートが12%から8%に改善した。",
+        "context": { "intent": "deep_dive", "emotion": "neutral" }
+      },
+      "expected": {
+        "is_suitable": true,
+        "quality_score_min": 82,
+        "expected_topics": ["チャーン分析", "オンボーディング", "SaaS"]
+      },
+      "tags": ["suitable", "churn", "saas", "data_driven"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "ID-010",
+      "input": {
+        "text": "OKRを導入した最初の四半期は、全チームが「100%達成できる」目標を設定してしまい、ストレッチゴールとして機能しなかった。翌四半期から「60-70%達成が健全」というOKRの本来の設計原則を徹底周知したところ、チャレンジングな取り組みが増えた。",
+        "context": { "intent": "knowledge", "emotion": "neutral" }
+      },
+      "expected": {
+        "is_suitable": true,
+        "quality_score_min": 72,
+        "expected_topics": ["OKR", "目標設定", "組織マネジメント"]
+      },
+      "tags": ["suitable", "okr", "management", "organizational_learning"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "ID-011",
+      "input": {
+        "text": "今日天気いいね",
+        "context": { "intent": "chat", "emotion": "positive" }
+      },
+      "expected": {
+        "is_suitable": false,
+        "not_suitable_reason": "雑談"
+      },
+      "tags": ["not_suitable", "small_talk", "no_insight"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-012",
+      "input": {
+        "text": "テスト",
+        "context": { "intent": "chat", "emotion": "neutral" }
+      },
+      "expected": {
+        "is_suitable": false,
+        "not_suitable_reason": "テスト投稿"
+      },
+      "tags": ["not_suitable", "test_post", "empty_content"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-013",
+      "input": {
+        "text": "ありがとう！",
+        "context": { "intent": "chat", "emotion": "positive" }
+      },
+      "expected": {
+        "is_suitable": false,
+        "not_suitable_reason": "短文・挨拶"
+      },
+      "tags": ["not_suitable", "greeting", "too_short"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-014",
+      "input": {
+        "text": "もうやだ。全部嫌い。",
+        "context": { "intent": "empathy", "emotion": "negative" }
+      },
+      "expected": {
+        "is_suitable": false,
+        "not_suitable_reason": "感情吐き出しのみ・知見なし"
+      },
+      "tags": ["not_suitable", "emotional_vent", "no_transferable_knowledge"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "ID-015",
+      "input": {
+        "text": "上司がまた変なことを言ってきた。本当に理解できない。",
+        "context": { "intent": "empathy", "emotion": "negative" }
+      },
+      "expected": {
+        "is_suitable": false,
+        "not_suitable_reason": "個人的な愚痴・知見として一般化困難"
+      },
+      "tags": ["not_suitable", "personal_complaint", "not_generalizable"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "ID-016",
+      "input": {
+        "text": "今日ランチに何食べようかな〜",
+        "context": { "intent": "chat", "emotion": "neutral" }
+      },
+      "expected": {
+        "is_suitable": false,
+        "not_suitable_reason": "業務無関係の雑談"
+      },
+      "tags": ["not_suitable", "off_topic", "personal"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-017",
+      "input": {
+        "text": "あああああ",
+        "context": { "intent": "state_share", "emotion": "negative" }
+      },
+      "expected": {
+        "is_suitable": false,
+        "not_suitable_reason": "意味のある内容なし"
+      },
+      "tags": ["not_suitable", "noise", "meaningless"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-018",
+      "input": {
+        "text": "おはようございます！今日も一日頑張りましょう！",
+        "context": { "intent": "chat", "emotion": "positive" }
+      },
+      "expected": {
+        "is_suitable": false,
+        "not_suitable_reason": "挨拶・知見なし"
+      },
+      "tags": ["not_suitable", "greeting", "motivational_filler"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-019",
+      "input": {
+        "text": "会議が多すぎる。",
+        "context": { "intent": "state_share", "emotion": "negative" }
+      },
+      "expected": {
+        "is_suitable": false,
+        "not_suitable_reason": "短文・改善策や学びが含まれない"
+      },
+      "tags": ["not_suitable", "too_short", "no_actionable_insight"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "ID-020",
+      "input": {
+        "text": "疲れた。もう寝る。",
+        "context": { "intent": "state_share", "emotion": "negative" }
+      },
+      "expected": {
+        "is_suitable": false,
+        "not_suitable_reason": "状態報告のみ・知見なし"
+      },
+      "tags": ["not_suitable", "state_only", "no_insight"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "ID-021",
+      "input": {
+        "text": "カスタマーサポートのNPS（ネットプロモータースコア）を追跡していたところ、スコアと解約率の相関が非常に低いことがわかった。NPSよりも「前回の問題が解決されたか」という質問への回答が、将来の解約を3倍正確に予測することが判明した。",
+        "context": { "intent": "knowledge", "emotion": "neutral" }
+      },
+      "expected": {
+        "is_suitable": true,
+        "quality_score_min": 82,
+        "expected_topics": ["NPS", "カスタマーサポート", "予測指標"]
+      },
+      "tags": ["suitable", "metrics", "counterintuitive", "validated"],
+      "difficulty": "hard"
+    }
+  ]
+}

@@ -1,0 +1,322 @@
+{
+  "component": "ContextAnalyzer",
+  "version": "1.0",
+  "description": "ContextAnalyzer のテストケース。感情極性・deep_researchトリガー・state/ventの境界を網羅する。",
+  "cases": [
+    {
+      "id": "CA-001",
+      "input": {
+        "text": "今日は新しいアーキテクチャの設計が完了した！チームからも好評で本当に嬉しい。久々に充実感がある。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "positive",
+        "intent": "state_share",
+        "topics": ["アーキテクチャ", "チーム", "達成感"],
+        "requires_deep_research": false
+      },
+      "tags": ["positive", "achievement", "work"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA-002",
+      "input": {
+        "text": "プロダクトのリリースが成功した。ユーザーからの初期反応もポジティブで、チーム全員でお祝いした。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "positive",
+        "intent": "state_share",
+        "topics": ["リリース", "ユーザーフィードバック", "チームワーク"],
+        "requires_deep_research": false
+      },
+      "tags": ["positive", "product_launch", "celebration"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA-003",
+      "input": {
+        "text": "1on1で上司から予想外のポジティブフィードバックをもらった。自分の仕事が認められていると感じた。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "positive",
+        "intent": "state_share",
+        "topics": ["1on1", "フィードバック", "承認"],
+        "requires_deep_research": false
+      },
+      "tags": ["positive", "recognition", "management"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA-004",
+      "input": {
+        "text": "コードレビューで厳しいフィードバックが続いていて、自信を失いかけている。自分のスキルが足りないんだと思う。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "negative",
+        "intent": "empathy",
+        "topics": ["コードレビュー", "自己評価", "スキル不足"],
+        "requires_deep_research": false
+      },
+      "tags": ["negative", "self_doubt", "technical"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA-005",
+      "input": {
+        "text": "締め切りが迫っているのに要件が変わり続けて本当に困っている。ストレスで眠れない日が続いている。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "negative",
+        "intent": "empathy",
+        "topics": ["締め切り", "要件変更", "ストレス"],
+        "requires_deep_research": false
+      },
+      "tags": ["negative", "stress", "deadline"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA-006",
+      "input": {
+        "text": "チームの雰囲気が悪化していて、ミーティングのたびに誰かと誰かが衝突している。改善策が見当たらない。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "negative",
+        "intent": "empathy",
+        "topics": ["チームダイナミクス", "対立", "人間関係"],
+        "requires_deep_research": false
+      },
+      "tags": ["negative", "team_conflict", "interpersonal"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "CA-007",
+      "input": {
+        "text": "今日はいつもと変わらない一日だった。特に良いことも悪いこともなく、淡々とタスクをこなした。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "neutral",
+        "intent": "state_share",
+        "topics": ["日常", "業務"],
+        "requires_deep_research": false
+      },
+      "tags": ["neutral", "routine", "daily"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA-008",
+      "input": {
+        "text": "会議が多くて作業時間が取れなかった。生産性は低め。でも特に不満はない。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "neutral",
+        "intent": "state_share",
+        "topics": ["会議", "生産性", "時間管理"],
+        "requires_deep_research": false
+      },
+      "tags": ["neutral", "meeting_heavy", "productivity"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA-009",
+      "input": {
+        "text": "リモートワーク移行後のエンジニアチームの生産性変化を、定量的に分析したい。業界のデータや研究が必要。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "neutral",
+        "intent": "knowledge",
+        "topics": ["リモートワーク", "生産性分析", "研究"],
+        "requires_deep_research": true
+      },
+      "tags": ["neutral", "deep_research", "data_analysis"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "CA-010",
+      "input": {
+        "text": "LLMの幻覚（Hallucination）問題の最新研究動向を調べたい。具体的な論文や解決手法を知りたい。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "neutral",
+        "intent": "knowledge",
+        "topics": ["LLM", "ハルシネーション", "AI研究"],
+        "requires_deep_research": true
+      },
+      "tags": ["neutral", "deep_research", "ai_research"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "CA-011",
+      "input": {
+        "text": "組織における心理的安全性とイノベーションの相関関係について、学術的な根拠とともに理解したい。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "neutral",
+        "intent": "knowledge",
+        "topics": ["心理的安全性", "イノベーション", "組織論"],
+        "requires_deep_research": true
+      },
+      "tags": ["neutral", "deep_research", "organizational"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "CA-012",
+      "input": {
+        "text": "今日ちょっとモヤモヤしてる。うまく言葉にできないけど、なんか違和感がある。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "negative",
+        "intent": "state_share",
+        "topics": ["モヤモヤ", "感情"],
+        "requires_deep_research": false
+      },
+      "tags": ["state_vent_boundary", "vague_emotion", "negative"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "CA-013",
+      "input": {
+        "text": "なんか最近やる気が出ない。特に嫌なことがあったわけじゃないけど、テンションが上がらない。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "negative",
+        "intent": "state_share",
+        "topics": ["モチベーション", "倦怠感"],
+        "requires_deep_research": false
+      },
+      "tags": ["state_vent_boundary", "low_motivation", "ambiguous"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "CA-014",
+      "input": {
+        "text": "もう会社やめたい。毎日同じことの繰り返しで、成長してる気がしない。誰かに吐き出したかっただけ。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "negative",
+        "intent": "empathy",
+        "topics": ["転職", "成長停滞", "感情吐き出し"],
+        "requires_deep_research": false
+      },
+      "tags": ["state_vent_boundary", "vent", "career"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "CA-015",
+      "input": {
+        "text": "疲れてるけど達成感もある。大変だったけど、なんとかやりきれた感じ。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "mixed",
+        "intent": "state_share",
+        "topics": ["達成感", "疲労", "完遂"],
+        "requires_deep_research": false
+      },
+      "tags": ["state_vent_boundary", "mixed_emotion", "completion"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "CA-016",
+      "input": {
+        "text": "久しぶりに昔の同僚と話した。彼女は別の会社で活躍していて、刺激を受けた。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "positive",
+        "intent": "state_share",
+        "topics": ["人間関係", "刺激", "近況"],
+        "requires_deep_research": false
+      },
+      "tags": ["positive", "relationship", "inspiration"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA-017",
+      "input": {
+        "text": "今日は難しい技術的な問題を解決できた。Stack Overflowとドキュメントを読み込んで5時間かかったけど、達成感がすごい。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "positive",
+        "intent": "state_share",
+        "topics": ["問題解決", "技術", "達成感"],
+        "requires_deep_research": false
+      },
+      "tags": ["positive", "problem_solving", "technical"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA-018",
+      "input": {
+        "text": "プレゼンで完全に頭が真っ白になった。準備が足りなかったし、上司の目の前で失敗して本当に恥ずかしい。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "negative",
+        "intent": "empathy",
+        "topics": ["プレゼン失敗", "恥", "準備不足"],
+        "requires_deep_research": false
+      },
+      "tags": ["negative", "failure", "embarrassment"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA-019",
+      "input": {
+        "text": "今月のKPIを達成した。去年と比べると30%改善。地道な努力が報われた気がする。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "positive",
+        "intent": "state_share",
+        "topics": ["KPI", "数値改善", "努力"],
+        "requires_deep_research": false
+      },
+      "tags": ["positive", "metrics", "achievement"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "CA-020",
+      "input": {
+        "text": "ユーザーインタビューを10件実施した結果、想定していた仮説が全部外れていた。設計をゼロから見直す必要がある。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "neutral",
+        "intent": "deep_dive",
+        "topics": ["ユーザーインタビュー", "仮説検証", "再設計"],
+        "requires_deep_research": false
+      },
+      "tags": ["neutral", "pivot", "research_finding"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "CA-021",
+      "input": {
+        "text": "マイクロサービスとモノリスのパフォーマンス比較について、実際の数値データや事例研究を集めたい。",
+        "prev_context": null
+      },
+      "expected": {
+        "emotion": "neutral",
+        "intent": "knowledge",
+        "topics": ["マイクロサービス", "アーキテクチャ", "パフォーマンス"],
+        "requires_deep_research": true
+      },
+      "tags": ["neutral", "deep_research", "architecture"],
+      "difficulty": "medium"
+    }
+  ]
+}

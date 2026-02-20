@@ -1,0 +1,410 @@
+{
+  "component": "IntentRouter",
+  "version": "1.0",
+  "description": "IntentRouter の意図分類テストケース。各 intent を網羅し、曖昧ケース・短文ケースを含む。",
+  "cases": [
+    {
+      "id": "IR-001",
+      "input": {
+        "text": "眠い",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "state_share",
+        "min_confidence": 0.5
+      },
+      "tags": ["state", "short_input", "1char_input"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-002",
+      "input": {
+        "text": "疲れた",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "state_share",
+        "min_confidence": 0.5
+      },
+      "tags": ["state", "short_input"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-003",
+      "input": {
+        "text": "今日も一日終わった。まあまあだった。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "state_share",
+        "min_confidence": 0.5
+      },
+      "tags": ["state", "daily_report"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-004",
+      "input": {
+        "text": "もう何もかもうまくいかない気がして、本当につらい。毎日がしんどい。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "empathy",
+        "min_confidence": 0.7,
+        "should_not_be": ["chat", "knowledge"]
+      },
+      "tags": ["empathy", "negative_emotion", "venting"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-005",
+      "input": {
+        "text": "上司のことが嫌で嫌でたまらない。毎日怒られてもう限界だ。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "empathy",
+        "min_confidence": 0.7
+      },
+      "tags": ["empathy", "workplace_stress", "venting"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-006",
+      "input": {
+        "text": "チームに馴染めなくてずっと不安だった。もう少し話を聞いてほしい。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "empathy",
+        "min_confidence": 0.6
+      },
+      "tags": ["empathy", "anxiety", "support_seeking"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "IR-007",
+      "input": {
+        "text": "Pythonの非同期処理（asyncio）のベストプラクティスを教えてほしい。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "knowledge",
+        "min_confidence": 0.7,
+        "should_not_be": ["chat", "state_share"]
+      },
+      "tags": ["knowledge", "technical", "programming"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-008",
+      "input": {
+        "text": "アジャイル開発におけるスプリントレビューとスプリントレトロスペクティブの違いを説明してほしい。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "knowledge",
+        "min_confidence": 0.7
+      },
+      "tags": ["knowledge", "agile", "methodology"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-009",
+      "input": {
+        "text": "機械学習モデルの過学習を防ぐための手法はどんなものがある？",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "knowledge",
+        "min_confidence": 0.6
+      },
+      "tags": ["knowledge", "ml", "technical"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-010",
+      "input": {
+        "text": "プロジェクトがずっと遅延しているんだけど、何が根本原因か一緒に整理したい。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "deep_dive",
+        "min_confidence": 0.6,
+        "should_not_be": ["chat", "state_share"]
+      },
+      "tags": ["deep_dive", "problem_solving", "project_management"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "IR-011",
+      "input": {
+        "text": "チームのコミュニケーションがうまく取れていない。何が問題で、どう改善すればいいか深掘りしたい。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "deep_dive",
+        "min_confidence": 0.6
+      },
+      "tags": ["deep_dive", "team", "analysis"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "IR-012",
+      "input": {
+        "text": "ユーザー離脱率が高いのだが、UXの観点からボトルネックを分析してほしい。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "deep_dive",
+        "min_confidence": 0.6
+      },
+      "tags": ["deep_dive", "ux", "analysis"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "IR-013",
+      "input": {
+        "text": "新しいサービスのアイデアをブレストしたい。何かユニークな切り口はないかな。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "brainstorm",
+        "min_confidence": 0.6
+      },
+      "tags": ["brainstorm", "ideation", "creative"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-014",
+      "input": {
+        "text": "社内ナレッジ共有の仕組みを新たに作りたい。どんなアプローチが考えられる？一緒に考えてほしい。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "brainstorm",
+        "min_confidence": 0.5
+      },
+      "tags": ["brainstorm", "knowledge_sharing", "organizational"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "IR-015",
+      "input": {
+        "text": "マーケティングキャンペーンの新しいコンセプトを一緒に考えたい。自由に発想してほしい。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "brainstorm",
+        "min_confidence": 0.6
+      },
+      "tags": ["brainstorm", "marketing", "creative"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-016",
+      "input": {
+        "text": "おはよう、今日もよろしく。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "chat",
+        "min_confidence": 0.5
+      },
+      "tags": ["chat", "greeting"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-017",
+      "input": {
+        "text": "最近どんな本読んでる？おすすめあれば教えて。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "chat",
+        "min_confidence": 0.5
+      },
+      "tags": ["chat", "casual_conversation"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-018",
+      "input": {
+        "text": "週末は何してたの？楽しいことあった？",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "chat",
+        "min_confidence": 0.5
+      },
+      "tags": ["chat", "small_talk"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "IR-019",
+      "input": {
+        "text": "なんか色々うまくいかないし、どうすればいいかわからない...",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "empathy",
+        "min_confidence": 0.4,
+        "needs_probing": true
+      },
+      "tags": ["ambiguous", "empathy_or_deep_dive", "needs_probing"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "IR-020",
+      "input": {
+        "text": "今日ちょっと考えたんだけど",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "chat",
+        "min_confidence": 0.3,
+        "needs_probing": true
+      },
+      "tags": ["ambiguous", "incomplete", "needs_probing", "short_input"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "IR-021",
+      "input": {
+        "text": "新機能の設計、いくつか案が浮かんでいて、深く考えたい気もするし、ざっくりアイデア出したい気もする。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "brainstorm",
+        "min_confidence": 0.4,
+        "needs_probing": true
+      },
+      "tags": ["ambiguous", "brainstorm_or_deep_dive", "needs_probing"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "IR-022",
+      "input": {
+        "text": "プレゼンが不安で、対策も知りたいし、誰かに聞いてほしい気持ちもある。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "empathy",
+        "min_confidence": 0.4,
+        "needs_probing": true
+      },
+      "tags": ["ambiguous", "empathy_or_knowledge", "needs_probing"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "IR-023",
+      "input": {
+        "text": "このシステムの問題、もっと学びたいし、根本から直したい気もする。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "deep_dive",
+        "min_confidence": 0.4,
+        "needs_probing": true
+      },
+      "tags": ["ambiguous", "knowledge_or_deep_dive", "needs_probing"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "IR-024",
+      "input": {
+        "text": "w",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "chat",
+        "min_confidence": 0.3,
+        "needs_probing": true
+      },
+      "tags": ["short_input", "1char", "ambiguous"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "IR-025",
+      "input": {
+        "text": "あのね",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "chat",
+        "min_confidence": 0.3,
+        "needs_probing": true
+      },
+      "tags": ["short_input", "3chars", "ambiguous"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "IR-026",
+      "input": {
+        "text": "困った",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "state_share",
+        "min_confidence": 0.4,
+        "needs_probing": true
+      },
+      "tags": ["short_input", "3chars", "ambiguous", "state_or_empathy"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "IR-027",
+      "input": {
+        "text": "よろしく",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "chat",
+        "min_confidence": 0.4
+      },
+      "tags": ["short_input", "4chars", "greeting"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "IR-028",
+      "input": {
+        "text": "Pythonを教えて",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "knowledge",
+        "min_confidence": 0.5
+      },
+      "tags": ["knowledge", "short_input"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "IR-029",
+      "input": {
+        "text": "今日はチームビルディングのワークショップがあって、すごく楽しかった！メンバーとの距離が縮まった気がする。",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "state_share",
+        "min_confidence": 0.5,
+        "should_not_be": ["deep_dive", "knowledge"]
+      },
+      "tags": ["state", "positive_emotion", "long_input"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "IR-030",
+      "input": {
+        "text": "プロジェクトの進め方について、チームメンバーとのコミュニケーションがうまくいかなくて困っている",
+        "prev_context": null
+      },
+      "expected": {
+        "primary_intent": "deep_dive",
+        "min_confidence": 0.6,
+        "should_not_be": ["chat", "state_share"]
+      },
+      "tags": ["deep_dive", "team", "problem_solving", "long_input"],
+      "difficulty": "medium"
+    }
+  ]
+}
