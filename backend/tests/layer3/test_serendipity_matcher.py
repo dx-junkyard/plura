@@ -344,22 +344,22 @@ class TestUtilityMethods:
         assert "3件" in matcher._generate_display_message(3)
         assert "5件" in matcher._generate_display_message(5)
 
-    def test_parse_team_response_returns_none_when_team_not_found(self):
+    async def test_parse_team_response_returns_none_when_team_not_found(self):
         """team_found=False の場合は None を返す"""
         matcher = SerendipityMatcher()
-        result = matcher._parse_team_response({"team_found": False}, [])
+        result = await matcher._parse_team_response({"team_found": False}, [])
 
         assert result is None
 
-    def test_parse_team_response_returns_none_when_no_members(self):
+    async def test_parse_team_response_returns_none_when_no_members(self):
         """members が空の場合は None を返す"""
         matcher = SerendipityMatcher()
-        result = matcher._parse_team_response(
+        result = await matcher._parse_team_response(
             {"team_found": True, "members": []}, []
         )
         assert result is None
 
-    def test_parse_team_response_builds_correct_structure(self):
+    async def test_parse_team_response_builds_correct_structure(self):
         """有効なレスポンスから正しい TEAM_PROPOSAL 構造が生成される"""
         matcher = SerendipityMatcher()
         llm_result = {
@@ -384,7 +384,7 @@ class TestUtilityMethods:
             }
         ]
 
-        result = matcher._parse_team_response(llm_result, candidates)
+        result = await matcher._parse_team_response(llm_result, candidates)
 
         assert result is not None
         assert result["has_recommendations"] is True
