@@ -398,6 +398,26 @@ LLM API の呼び出しはトークンコストが発生するため、**通常�
 - Golden Dataset を更新・追加したとき
 - 定期的な品質ベースライン確認（例: 週次）
 
+#### GitHub リポジトリへの Secrets 登録
+
+CI で LLM 評価を実行するには、GitHub リポジトリに API キーを Secrets として登録する必要があります。
+
+**登録手順:**
+
+1. GitHub リポジトリの **Settings** タブを開く
+2. 左サイドバーの **Secrets and variables** → **Actions** を選択
+3. **New repository secret** ボタンをクリック
+4. 以下のシークレットを登録する
+
+| Secret 名 | 値 | 必須 |
+|-----------|-----|------|
+| `OPENAI_API_KEY` | OpenAI の API キー（`sk-...` 形式） | OpenAI を使う場合は必須 |
+| `GOOGLE_CLOUD_PROJECT` | GCP プロジェクト ID | Vertex AI を使う場合は必須 |
+
+> **注意:** Secrets に登録した値はワークフローのログには表示されません。誤って公開しないよう、`.env` ファイルや直接コードへの記載は避けてください。
+>
+> Vertex AI（Gemini）を使用する場合は、サービスアカウントキーを別途 Secret（例: `GCP_SA_KEY`）として登録し、ワークフロー内で認証するよう追加設定が必要です。詳細は「LLMプロバイダーの設定」セクションを参照してください。
+
 #### CIでの手動実行手順（GitHub Actions）
 
 1. GitHub リポジトリの **Actions** タブを開く
