@@ -318,6 +318,92 @@ npm run dev
 
 ---
 
+## テスト & 品質評価
+
+PLURAは3段階の品質保証パイプラインを採用しています。
+
+### Phase 1: ユニットテスト（Golden Dataset + Mock）
+
+各コンポーネントに対して Golden Dataset（テストケース集）を整備し、LLM をモックした状態でロジックの正しさを検証します。
+
+```bash
+cd backend
+
+# 全テスト実行
+pytest tests/ -v
+
+# レイヤー別実行
+pytest tests/layer1/ -v   # IntentRouter
+pytest tests/layer2/ -v   # PrivacySanitizer
+pytest tests/layer3/ -v   # SerendipityMatcher
+```
+
+### Phase 2: LLM-as-a-Judge 自動評価
+
+LLM を「裁判官」として、コンポーネント出力の定性的品質を 1-10 点で自動採点します。
+
+| Evaluator | 対象 | 評価軸 |
+|-----------|------|--------|
+| `IntentEvaluator` | IntentRouter | intent_accuracy / confidence_calibration / probe_appropriateness |
+| `PrivacyEvaluator` | PrivacySanitizer | pii_removal / context_preservation / naturalness |
+| `InsightEvaluator` | InsightDistiller | structure_quality / suitability_judgment / abstraction_quality |
+| `SerendipityEvaluator` | SerendipityMatcher | team_formation / role_complementarity / synergy_quality |
+
+```bash
+cd backend
+
+# ルールベース評価（LLM不要、全PR で実行可能）
+python -m tests.evaluators.run_evaluation --all
+
+# 特定コンポーネントのみ
+python -m tests.evaluators.run_evaluation --component privacy_sanitizer
+
+# LLM Judge を使用した評価（API キーが必要）
+python -m tests.evaluators.run_evaluation --component privacy_sanitizer --use-llm
+
+# CI 用（pass_rate < 70% で非ゼロ終了コード）
+python -m tests.evaluators.run_evaluation --all --ci
+```
+
+評価レポートは `backend/tests/eval_reports/` に JSON 形式で出力されます。
+スコアが閾値を下回った失敗ケースは `backend/tests/optimization/failure_cases.json` に自動蓄積され、Phase 3（プロンプト自己最適化）のデータソースとなります。
+
+### CI/CD 品質ゲート
+
+GitHub Actions で以下の2段階チェックが走ります。
+
+| ワークフロー | トリガー | 内容 |
+|-------------|---------|------|
+| `test.yml` | 全 push / PR | ユニットテスト + カバレッジ |
+| `quality-gate.yml` | `backend/` 変更を含む PR | ルールベース評価（常時）+ LLM 評価（`eval` ラベル付き PR のみ） |
+
+### テストディレクトリ構成
+
+```
+backend/tests/
+├── conftest.py               # MockLLMProvider、共通フィクスチャ
+├── golden_datasets/           # Phase 1: 評価用テストケース (JSON)
+│   ├── intent_router.json
+│   ├── privacy_sanitizer.json
+│   ├── insight_distiller.json
+│   └── serendipity_matcher.json
+├── layer1/                    # Phase 1: IntentRouter 単体テスト
+├── layer2/                    # Phase 1: PrivacySanitizer 単体テスト
+├── layer3/                    # Phase 1: SerendipityMatcher 単体テスト
+├── evaluators/                # Phase 2: LLM-as-a-Judge
+│   ├── base_evaluator.py      #   評価基盤クラス
+│   ├── intent_evaluator.py    #   Layer 1 評価器
+│   ├── privacy_evaluator.py   #   Layer 2 評価器 (Privacy)
+│   ├── insight_evaluator.py   #   Layer 2 評価器 (Insight)
+│   ├── serendipity_evaluator.py # Layer 3 評価器
+│   ├── run_evaluation.py      #   CLI エントリポイント
+│   └── test_evaluators.py     #   Evaluator 自体のテスト
+├── eval_reports/              # 評価レポート出力先 (JSON)
+└── optimization/              # Phase 3: プロンプト自己最適化 (予定)
+```
+
+---
+
 ## 開発ロードマップ
 
 * [x] Phase 1: 最高の「独り言ツール」の構築
@@ -325,6 +411,12 @@ npm run dev
 * [ ] Phase 3: 構造的マッチングの実装
 * [ ] Phase 4: Team-Up Suggestion Engine
 * [ ] Phase 5: 小規模プロジェクト自動生成
+
+### 品質保証ロードマップ
+
+* [x] Phase 1: Golden Dataset + ユニットテスト（6コンポーネント分）
+* [x] Phase 2: LLM-as-a-Judge 自動評価フレームワーク
+* [ ] Phase 3: プロンプト自己最適化（failure_cases → prompt_optimizer → A/B テスト）
 
 開発の進め方・ローカル起動の詳細は **[DEVELOPMENT.md](DEVELOPMENT.md)** を参照してください。
 
