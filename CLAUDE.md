@@ -19,3 +19,105 @@
 - **Privacy First:** Never commit code that bypasses `PrivacySanitizer` in Layer 2.
 - **Sync Types:** When modifying Pydantic models (`backend`), update TypeScript types (`frontend`) immediately.
 - **Test Distillation:** Use the `note-structurer` skill to verify how raw logs are processed.
+
+## Skills
+
+### Self-Optimization（テスト・評価・プロンプト最適化）
+テスト追加、Golden Dataset 構築、LLM-as-a-Judge 評価、プロンプト改善時は
+`.claude/skills/plura-self-optimization.md` を参照すること。
+```
+
+### 3. 確認
+
+Claude Code で以下のように指示して、スキルが認識されることを確認：
+
+```
+> テスト環境をセットアップしたい。Self-Optimizationスキルを読んで進めて。
+```
+
+---
+
+## 使い方（Claude Code への指示例）
+
+### Phase 1: Golden Dataset と単体テスト
+
+```
+IntentRouter の Golden Dataset を作成して。
+SKILL.md の Section 3 のフォーマットに従って、最低20件のテストケースを作って。
+```
+
+```
+PrivacySanitizer の単体テストを書いて。
+SKILL.md の Section 3.3 の2層テスト（フォールバック + LLMモック）パターンで。
+```
+
+### Phase 2: LLM-as-a-Judge
+
+```
+PrivacyEvaluator を実装して。
+SKILL.md の Section 4 の BaseEvaluator を継承して、
+PII除去率・文脈維持率・自然さの3軸で採点するように。
+```
+
+### Phase 3: プロンプト最適化
+
+```
+IntentRouter の失敗ケースを分析して改善案を出して。
+SKILL.md の Section 5 の prompt_optimizer パターンで。
+```
+
+---
+
+## ディレクトリ構成（完成時）
+
+```
+project-root/
+├── CLAUDE.md                          # ← スキル参照を追記
+├── .claude/
+│   └── skills/
+│       └── plura-self-optimization.md # ← このファイル
+├── backend/
+│   ├── app/
+│   │   └── services/                 # 既存コンポーネント
+│   └── tests/
+│       ├── conftest.py               # 共通フィクスチャ
+│       ├── golden_datasets/          # Phase 1
+│       │   ├── intent_router.json
+│       │   ├── privacy_sanitizer.json
+│       │   └── ...
+│       ├── unit/                     # Phase 1
+│       │   ├── test_intent_router.py
+│       │   └── ...
+│       ├── evaluators/               # Phase 2
+│       │   ├── base_evaluator.py
+│       │   ├── privacy_evaluator.py
+│       │   └── run_evaluation.py
+│       ├── optimization/             # Phase 3
+│       │   ├── failure_cases.json
+│       │   ├── prompt_optimizer.py
+│       │   └── ab_test_runner.py
+│       └── integration/
+│           └── test_layer2_pipeline.py
+└── .github/
+    └── workflows/
+        └── quality-gate.yml          # CI/CD
+```
+
+---
+
+## 推奨進行順序
+
+| Step | やること | 所要時間目安 |
+|------|---------|-------------|
+| 1 | SKILL.md を `.claude/skills/` に配置 | 1分 |
+| 2 | `backend/tests/conftest.py` 作成（SKILL.md §3.4） | 15分 |
+| 3 | IntentRouter の Golden Dataset 20件作成 | 30分 |
+| 4 | IntentRouter の単体テスト作成・実行 | 30分 |
+| 5 | PrivacySanitizer → InsightDistiller と横展開 | 各30分 |
+| 6 | BaseEvaluator + PrivacyEvaluator 実装 | 1時間 |
+| 7 | 評価CLI で全コンポーネントスコア確認 | 30分 |
+| 8 | 失敗ケース蓄積 → prompt_optimizer 実行 | 1時間 |
+
+**推奨**: まず IntentRouter か PrivacySanitizer の1コンポーネントで Phase 1→2 を
+通しで完了させ、パターンを確立してから他コンポーネントに横展開する。
+

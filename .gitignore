@@ -82,3 +82,5 @@ celerybeat.pid
 # GCP
 .gcp/
 *.json
+# openapi.json は Backend の Single Source of Truth として追跡する
+!backend/openapi.json

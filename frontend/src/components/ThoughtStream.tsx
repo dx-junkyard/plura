@@ -320,7 +320,7 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
     try {
       const result = await api.getRecommendations(text);
       if (result.has_recommendations) {
-        setRecommendations(result.recommendations, result.display_message);
+        setRecommendations(result.recommendations, result.display_message ?? null);
       } else {
         clearRecommendations();
       }

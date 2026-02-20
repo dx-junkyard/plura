@@ -33,13 +33,20 @@ class Base(DeclarativeBase):
     metadata = metadata
 
 
+# エンジン作成用の引数を動的に構築
+engine_kwargs = {
+    "echo": False,  # または settings.debug
+}
+
+# SQLite以外（PostgreSQL等）の場合のみ、プーリング設定を追加
+if not settings.database_url.startswith("sqlite"):
+    engine_kwargs["pool_size"] = settings.database_pool_size
+    engine_kwargs["max_overflow"] = settings.database_max_overflow
+
 # 非同期エンジン
 engine = create_async_engine(
     settings.database_url,
-    pool_size=settings.database_pool_size,
-    max_overflow=settings.database_max_overflow,
-    echo=False,
-#    echo=settings.debug,
+    **engine_kwargs
 )
 
 # 非同期セッションファクトリ
