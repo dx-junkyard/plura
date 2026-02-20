@@ -84,3 +84,5 @@ celerybeat.pid
 *.json
 # openapi.json は Backend の Single Source of Truth として追跡する
 !backend/openapi.json
+# Golden Datasets は評価基盤として Git 管理する
+!backend/tests/golden_datasets/*.json
