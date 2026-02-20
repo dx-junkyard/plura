@@ -1,0 +1,429 @@
+{
+  "component": "SerendipityMatcher",
+  "version": "1.0",
+  "description": "SerendipityMatcher のテストケース。補完的なチームが成立するケースとチーム不成立ケースを網羅する。Hacker/Hustler/Hipster の役割補完性を検証する。",
+  "cases": [
+    {
+      "id": "SM-001",
+      "input": {
+        "text": "Reactのパフォーマンス最適化で悩んでいる。特にレンダリングの最適化と状態管理の設計について深く考えたい。メモ化の使いどころが難しい。",
+        "candidates": [
+          {
+            "insight_id": "cand-001",
+            "title": "AI/MLモデルをプロダクトに組み込む際の事業化戦略",
+            "summary": "技術的に優れたモデルでも、正しいビジネスモデルと市場戦略がなければ普及しない。Go-to-market戦略の重要性を痛感した。",
+            "topics": ["ビジネス戦略", "AI", "マーケット"],
+            "score": 0.78,
+            "user_role": "ハスラー"
+          },
+          {
+            "insight_id": "cand-002",
+            "title": "UXリサーチでユーザーの本質的ニーズを発掘する方法",
+            "summary": "表面的な要求ではなく、コンテキストインタビューとジョブ理論で本当の課題を見つけることができた。",
+            "topics": ["UXリサーチ", "デザイン思考", "ユーザーインタビュー"],
+            "score": 0.72,
+            "user_role": "ヒップスター"
+          },
+          {
+            "insight_id": "cand-003",
+            "title": "Pythonでのデータパイプライン自動化",
+            "summary": "dbtとAirflowを組み合わせてデータ処理を効率化した経験。同じ技術スタックの人と話したい。",
+            "topics": ["Python", "データエンジニアリング", "自動化"],
+            "score": 0.68,
+            "user_role": "ハッカー"
+          }
+        ]
+      },
+      "expected": {
+        "team_found": true,
+        "team_size": 3,
+        "expected_roles": ["ハッカー", "ハスラー", "ヒップスター"],
+        "min_synergy_score": 0.7
+      },
+      "tags": ["team_success", "full_team", "hacker_hustler_hipster"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SM-002",
+      "input": {
+        "text": "バックエンドAPIの設計で、RESTとGraphQLのどちらを選ぶべきか迷っている。パフォーマンスとDeveloper Experienceのトレードオフが難しい。",
+        "candidates": [
+          {
+            "insight_id": "cand-004",
+            "title": "テクノロジースタートアップの資金調達戦略",
+            "summary": "VCへのピッチで重要なのは技術力より市場規模とチームの実績だと学んだ。",
+            "topics": ["資金調達", "スタートアップ", "VC"],
+            "score": 0.75,
+            "user_role": "ハスラー"
+          },
+          {
+            "insight_id": "cand-005",
+            "title": "モバイルアプリのUI/UXデザインパターン",
+            "summary": "iOSとAndroidのHIGとMaterial Designを理解した上でプラットフォーム固有のUXを設計することが重要。",
+            "topics": ["UI/UX", "モバイル", "デザインシステム"],
+            "score": 0.70,
+            "user_role": "ヒップスター"
+          }
+        ]
+      },
+      "expected": {
+        "team_found": true,
+        "team_size": 2,
+        "expected_roles": ["ハッカー", "ハスラー"],
+        "min_synergy_score": 0.65
+      },
+      "tags": ["team_success", "partial_team", "hacker_hustler"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SM-003",
+      "input": {
+        "text": "リモートワーク環境でのチームの生産性向上について研究している。非同期コミュニケーションと同期ミーティングの最適なバランスを探っている。",
+        "candidates": [
+          {
+            "insight_id": "cand-006",
+            "title": "チームビルディングとエンゲージメント向上施策",
+            "summary": "リモートでも心理的安全性を高めるための具体的な施策を実施した経験。1on1の頻度と質が鍵。",
+            "topics": ["チームビルディング", "エンゲージメント", "マネジメント"],
+            "score": 0.85,
+            "user_role": "ハスラー"
+          },
+          {
+            "insight_id": "cand-007",
+            "title": "非同期コミュニケーションツールの設計哲学",
+            "summary": "Notionとslackの組み合わせで情報の非同期共有と議論を分離。ツール設計でコミュニケーション文化が変わる。",
+            "topics": ["プロダクトデザイン", "コミュニケーション", "ツール設計"],
+            "score": 0.80,
+            "user_role": "ヒップスター"
+          },
+          {
+            "insight_id": "cand-008",
+            "title": "分散チームのための開発ワークフロー最適化",
+            "summary": "GitOpsとCI/CDパイプラインで非同期でも高品質なコード品質を維持する方法を確立した。",
+            "topics": ["DevOps", "リモートワーク", "CI/CD"],
+            "score": 0.73,
+            "user_role": "ハッカー"
+          }
+        ]
+      },
+      "expected": {
+        "team_found": true,
+        "team_size": 3,
+        "expected_roles": ["ハッカー", "ハスラー", "ヒップスター"],
+        "min_synergy_score": 0.75
+      },
+      "tags": ["team_success", "full_team", "remote_work", "high_synergy"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SM-004",
+      "input": {
+        "text": "EdTechスタートアップを立ち上げたいと考えている。学習体験のデザインと収益化モデルについて悩んでいる。",
+        "candidates": [
+          {
+            "insight_id": "cand-009",
+            "title": "教育プラットフォームのマネタイズ戦略比較",
+            "summary": "サブスクリプション vs コース販売 vs B2Bライセンスの各モデルのPLRと解約率の実データを分析した。",
+            "topics": ["EdTech", "マネタイズ", "SaaS"],
+            "score": 0.88,
+            "user_role": "ハスラー"
+          },
+          {
+            "insight_id": "cand-010",
+            "title": "インタラクティブ学習体験のデザイン原則",
+            "summary": "ゲーミフィケーションと学習科学を組み合わせた体験設計で学習継続率が2倍になった事例。",
+            "topics": ["学習設計", "ゲーミフィケーション", "UX"],
+            "score": 0.82,
+            "user_role": "ヒップスター"
+          },
+          {
+            "insight_id": "cand-011",
+            "title": "LMSとコンテンツ管理システムの技術選定",
+            "summary": "Moodle拡張からスクラッチ開発まで、EdTechのバックエンドアーキテクチャ選択のトレードオフ。",
+            "topics": ["LMS", "バックエンド", "EdTech技術"],
+            "score": 0.76,
+            "user_role": "ハッカー"
+          }
+        ]
+      },
+      "expected": {
+        "team_found": true,
+        "team_size": 3,
+        "expected_roles": ["ハッカー", "ハスラー", "ヒップスター"],
+        "min_synergy_score": 0.78
+      },
+      "tags": ["team_success", "full_team", "edtech", "startup"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SM-005",
+      "input": {
+        "text": "ヘルスケアアプリの開発でデータプライバシーと使いやすさのバランスに悩んでいる。医療機器規制への対応も課題。",
+        "candidates": [
+          {
+            "insight_id": "cand-012",
+            "title": "ヘルスケア規制（薬機法・個人情報保護法）への対応実務",
+            "summary": "医療系スタートアップでの法規制対応の実体験。事前の法律専門家との相談が必須。",
+            "topics": ["規制対応", "ヘルスケア", "コンプライアンス"],
+            "score": 0.82,
+            "user_role": "ハスラー"
+          },
+          {
+            "insight_id": "cand-013",
+            "title": "医療従事者向けUXの特殊性",
+            "summary": "高ストレス環境での使用を前提としたインターフェース設計。認知負荷の最小化が最重要課題。",
+            "topics": ["医療UX", "アクセシビリティ", "デザイン"],
+            "score": 0.79,
+            "user_role": "ヒップスター"
+          }
+        ]
+      },
+      "expected": {
+        "team_found": true,
+        "team_size": 2,
+        "expected_roles": ["ハスラー", "ヒップスター"],
+        "min_synergy_score": 0.70
+      },
+      "tags": ["team_success", "partial_team", "healthcare", "regulation"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SM-006",
+      "input": {
+        "text": "マイクロサービスアーキテクチャへの移行を検討している。モノリスの分解戦略とサービスメッシュの設計について知見を集めたい。",
+        "candidates": [
+          {
+            "insight_id": "cand-014",
+            "title": "KubernetesでのマイクロサービスのCI/CDパイプライン構築",
+            "summary": "Helmチャートと GitOpsを使った本番環境の安定した継続的デプロイの実現方法。",
+            "topics": ["Kubernetes", "CI/CD", "インフラ"],
+            "score": 0.85,
+            "user_role": "ハッカー"
+          },
+          {
+            "insight_id": "cand-015",
+            "title": "gRPCとREST APIのハイブリッドアーキテクチャ設計",
+            "summary": "内部サービス間通信にgRPC、外部公開APIにRESTを使い分けるアーキテクチャパターン。",
+            "topics": ["API設計", "gRPC", "バックエンド"],
+            "score": 0.80,
+            "user_role": "ハッカー"
+          },
+          {
+            "insight_id": "cand-016",
+            "title": "Istioサービスメッシュの本番導入の落とし穴",
+            "summary": "サービスメッシュ導入時のトラフィック管理と可観測性の実装で苦労したポイントの共有。",
+            "topics": ["サービスメッシュ", "Istio", "クラウドネイティブ"],
+            "score": 0.78,
+            "user_role": "ハッカー"
+          }
+        ]
+      },
+      "expected": {
+        "team_found": false,
+        "reason": "全員がハッカー役割であり、ビジネス・デザイン視点が欠如している"
+      },
+      "tags": ["team_failure", "all_hackers", "no_complementarity"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SM-007",
+      "input": {
+        "text": "新規事業のピッチ資料を作成している。投資家へのストーリーラインと市場規模の説明方法を磨きたい。",
+        "candidates": [
+          {
+            "insight_id": "cand-017",
+            "title": "シリーズAのピッチで重視された財務モデルの作り方",
+            "summary": "投資家が最も気にするユニットエコノミクスとCAC/LTVの説明方法を実体験から解説。",
+            "topics": ["資金調達", "財務モデル", "VC"],
+            "score": 0.87,
+            "user_role": "ハスラー"
+          },
+          {
+            "insight_id": "cand-018",
+            "title": "競合分析とポジショニングマップの作成方法",
+            "summary": "市場規模を正確に計算し、競合との差別化を明確に示すフレームワークの実践。",
+            "topics": ["競合分析", "マーケット", "戦略"],
+            "score": 0.82,
+            "user_role": "ハスラー"
+          },
+          {
+            "insight_id": "cand-019",
+            "title": "スタートアップのGo-to-Market戦略立案",
+            "summary": "PMFを検証してから本格展開するためのマーケティングファネルの設計経験。",
+            "topics": ["GTM戦略", "マーケティング", "PMF"],
+            "score": 0.79,
+            "user_role": "ハスラー"
+          }
+        ]
+      },
+      "expected": {
+        "team_found": false,
+        "reason": "全員がハスラー役割であり、技術・デザイン視点が欠如している"
+      },
+      "tags": ["team_failure", "all_hustlers", "no_complementarity"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SM-008",
+      "input": {
+        "text": "デザインシステムの構築を進めている。コンポーネントライブラリの設計原則とトークン管理の方法論を整理したい。",
+        "candidates": [
+          {
+            "insight_id": "cand-020",
+            "title": "Figmaでのデザイントークン管理とエンジニアとの連携",
+            "summary": "デザイントークンをFigmaとコードベースで同期させるワークフローの確立事例。",
+            "topics": ["Figma", "デザインシステム", "デザイントークン"],
+            "score": 0.88,
+            "user_role": "ヒップスター"
+          },
+          {
+            "insight_id": "cand-021",
+            "title": "アクセシビリティを考慮したUIコンポーネント設計",
+            "summary": "WCAG 2.1 AAに準拠したコンポーネントライブラリの設計と実装のポイント。",
+            "topics": ["アクセシビリティ", "UIデザイン", "コンポーネント"],
+            "score": 0.83,
+            "user_role": "ヒップスター"
+          },
+          {
+            "insight_id": "cand-022",
+            "title": "デザインシステムのガバナンスと普及戦略",
+            "summary": "複数チームにデザインシステムを採用してもらうための社内コミュニティ形成とドキュメント戦略。",
+            "topics": ["デザインガバナンス", "組織変革", "ドキュメント"],
+            "score": 0.77,
+            "user_role": "ヒップスター"
+          }
+        ]
+      },
+      "expected": {
+        "team_found": false,
+        "reason": "全員がヒップスター役割であり、エンジニアリング・ビジネス視点が欠如している"
+      },
+      "tags": ["team_failure", "all_hipsters", "no_complementarity"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SM-009",
+      "input": {
+        "text": "深層強化学習を使ったゲームAIの研究をしている。報酬設計と学習安定性の改善に取り組んでいる。",
+        "candidates": [
+          {
+            "insight_id": "cand-023",
+            "title": "PPOアルゴリズムのハイパーパラメータチューニング",
+            "summary": "強化学習の学習安定性を上げるためのクリッピングレートとエントロピー係数の調整方法。",
+            "topics": ["強化学習", "深層学習", "アルゴリズム"],
+            "score": 0.55,
+            "user_role": "ハッカー"
+          },
+          {
+            "insight_id": "cand-024",
+            "title": "ゲームAIのシミュレーション環境構築",
+            "summary": "OpenAI Gymカスタム環境の実装とPyTorchとの連携による高速学習の実現方法。",
+            "topics": ["ゲームAI", "シミュレーション", "PyTorch"],
+            "score": 0.52,
+            "user_role": "ハッカー"
+          }
+        ]
+      },
+      "expected": {
+        "team_found": false,
+        "reason": "類似した技術スタック・役割のみで補完関係が成立せず、かつスコアが閾値を下回る"
+      },
+      "tags": ["team_failure", "low_score", "similar_skills", "no_complementarity"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SM-010",
+      "input": {
+        "text": "FinTechアプリのUI改善に取り組んでいる。金融規制への対応とユーザーが直感的に使えるインターフェースを両立させたい。",
+        "candidates": [
+          {
+            "insight_id": "cand-025",
+            "title": "金融サービスのコンバージョン改善UX事例",
+            "summary": "複雑な本人確認フローをシンプルに設計し直した事例。離脱率が60%改善した。",
+            "topics": ["FinTech", "コンバージョン最適化", "UX"],
+            "score": 0.86,
+            "user_role": "ヒップスター"
+          },
+          {
+            "insight_id": "cand-026",
+            "title": "金融規制（資金決済法・割賦販売法）対応の実務",
+            "summary": "FinTechの規制対応を内製化するための法務チームとの協働方法と対応ノウハウ。",
+            "topics": ["法規制", "FinTech", "コンプライアンス"],
+            "score": 0.81,
+            "user_role": "ハスラー"
+          },
+          {
+            "insight_id": "cand-027",
+            "title": "セキュリティ要件を満たすフロントエンド設計",
+            "summary": "CSRF対策・XSS防止・セキュアなトークン管理をReactアプリで実装する方法論。",
+            "topics": ["セキュリティ", "フロントエンド", "React"],
+            "score": 0.77,
+            "user_role": "ハッカー"
+          }
+        ]
+      },
+      "expected": {
+        "team_found": true,
+        "team_size": 3,
+        "expected_roles": ["ハッカー", "ハスラー", "ヒップスター"],
+        "min_synergy_score": 0.80
+      },
+      "tags": ["team_success", "full_team", "fintech", "regulation"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SM-011",
+      "input": {
+        "text": "短い",
+        "candidates": []
+      },
+      "expected": {
+        "team_found": false,
+        "has_recommendations": false,
+        "trigger_reason": "insufficient_content"
+      },
+      "tags": ["edge_case", "short_input", "no_search"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SM-012",
+      "input": {
+        "text": "サステナビリティとテクノロジーを掛け合わせた事業で社会課題を解決したい。気候変動対策に貢献できるプロダクトを作りたいと考えている。",
+        "candidates": [
+          {
+            "insight_id": "cand-028",
+            "title": "カーボンクレジット取引プラットフォームの開発経験",
+            "summary": "ブロックチェーン技術を使ったトレーサブルなカーボンクレジット取引の実装。スマートコントラクトの設計が核心。",
+            "topics": ["ブロックチェーン", "カーボンクレジット", "Web3"],
+            "score": 0.80,
+            "user_role": "ハッカー"
+          },
+          {
+            "insight_id": "cand-029",
+            "title": "ESG投資家へのインパクト指標の示し方",
+            "summary": "社会的インパクトを定量化してESG投資家にピッチする方法。SDGsマッピングと第三者認証の活用。",
+            "topics": ["ESG", "インパクト投資", "サステナビリティ"],
+            "score": 0.76,
+            "user_role": "ハスラー"
+          },
+          {
+            "insight_id": "cand-030",
+            "title": "環境データのビジュアライゼーションUX",
+            "summary": "複雑な環境データを一般ユーザーが理解しやすい形で可視化するためのデータビズ設計原則。",
+            "topics": ["データビジュアライゼーション", "環境", "情報デザイン"],
+            "score": 0.73,
+            "user_role": "ヒップスター"
+          }
+        ]
+      },
+      "expected": {
+        "team_found": true,
+        "team_size": 3,
+        "expected_roles": ["ハッカー", "ハスラー", "ヒップスター"],
+        "min_synergy_score": 0.72
+      },
+      "tags": ["team_success", "full_team", "sustainability", "social_impact"],
+      "difficulty": "medium"
+    }
+  ]
+}

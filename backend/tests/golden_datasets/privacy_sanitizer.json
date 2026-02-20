@@ -1,0 +1,401 @@
+{
+  "component": "PrivacySanitizer",
+  "version": "1.0",
+  "description": "PrivacySanitizer の PII除去テストケース。電話番号・メール・人名・企業名等の除去と False Positive 検証を網羅する。",
+  "cases": [
+    {
+      "id": "PS-001",
+      "input": {
+        "text": "連絡先はsuzuki@fictionalcorp.co.jpです。何かあればご連絡ください。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 1,
+        "expected_replacements": [
+          { "type": "email", "original": "suzuki@fictionalcorp.co.jp" }
+        ],
+        "should_contain": ["[メールアドレス]"],
+        "should_not_contain": ["suzuki@fictionalcorp.co.jp"]
+      },
+      "tags": ["email", "single_pii"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PS-002",
+      "input": {
+        "text": "担当者の田中: tanaka.jiro@example-startup.io と、デザイナーの yamamoto@design-agency.net に確認をお願いします。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 2,
+        "expected_replacements": [
+          { "type": "email", "original": "tanaka.jiro@example-startup.io" },
+          { "type": "email", "original": "yamamoto@design-agency.net" }
+        ],
+        "should_not_contain": ["tanaka.jiro@example-startup.io", "yamamoto@design-agency.net"]
+      },
+      "tags": ["email", "multiple_pii"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PS-003",
+      "input": {
+        "text": "プロジェクトのお問い合わせはinfo+support@fictional-enterprise.example.comまでどうぞ。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 1,
+        "expected_replacements": [
+          { "type": "email", "original": "info+support@fictional-enterprise.example.com" }
+        ],
+        "should_contain": ["[メールアドレス]"]
+      },
+      "tags": ["email", "complex_email"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PS-004",
+      "input": {
+        "text": "会議の前にsakamoto@demo-company.orgへ資料を送付し、その後admin@test-corp.jpにも共有すること。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 2,
+        "expected_replacements": [
+          { "type": "email", "original": "sakamoto@demo-company.org" },
+          { "type": "email", "original": "admin@test-corp.jp" }
+        ]
+      },
+      "tags": ["email", "multiple_pii", "context_heavy"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PS-005",
+      "input": {
+        "text": "ご用の方はフリーダイヤル 03-5678-1234 までお電話ください。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 1,
+        "expected_replacements": [
+          { "type": "phone", "original": "03-5678-1234" }
+        ],
+        "should_contain": ["[電話番号]"],
+        "should_not_contain": ["03-5678-1234"]
+      },
+      "tags": ["phone", "landline", "single_pii"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PS-006",
+      "input": {
+        "text": "急ぎの連絡は090-2345-6789に電話してください。在宅中です。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 1,
+        "expected_replacements": [
+          { "type": "phone", "original": "090-2345-6789" }
+        ],
+        "should_not_contain": ["090-2345-6789"]
+      },
+      "tags": ["phone", "mobile", "single_pii"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PS-007",
+      "input": {
+        "text": "番号は0801234567ですが、繋がりにくい場合は0312345678にかけてみてください。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 2,
+        "expected_replacements": [
+          { "type": "phone", "original": "0801234567" },
+          { "type": "phone", "original": "0312345678" }
+        ]
+      },
+      "tags": ["phone", "no_hyphen", "multiple_pii"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PS-008",
+      "input": {
+        "text": "海外オフィスへの連絡先は +81-80-9876-5432 です。時差に注意してください。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 1,
+        "expected_replacements": [
+          { "type": "phone", "original": "+81-80-9876-5432" }
+        ]
+      },
+      "tags": ["phone", "international", "single_pii"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PS-009",
+      "input": {
+        "text": "今日は山田さんと一緒に新機能の仕様を詰めた。すごく進んだ気がする。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 1,
+        "expected_replacements": [
+          { "type": "name", "original": "山田さん" }
+        ],
+        "should_not_contain": ["山田さん"]
+      },
+      "tags": ["name", "san_suffix", "single_pii"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PS-010",
+      "input": {
+        "text": "伊藤様からのフィードバックを受けて、プロポーザルを修正した。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 1,
+        "expected_replacements": [
+          { "type": "name", "original": "伊藤様" }
+        ],
+        "should_not_contain": ["伊藤様"]
+      },
+      "tags": ["name", "sama_suffix", "single_pii"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PS-011",
+      "input": {
+        "text": "佐藤部長に承認をもらってから鈴木課長に展開する予定です。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 2,
+        "expected_replacements": [
+          { "type": "name", "original": "佐藤部長" },
+          { "type": "name", "original": "鈴木課長" }
+        ]
+      },
+      "tags": ["name", "title_suffix", "multiple_pii"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PS-012",
+      "input": {
+        "text": "加藤先生と中村さんに確認してから、小林様に最終報告しようと思う。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 3,
+        "expected_replacements": [
+          { "type": "name", "original": "加藤先生" },
+          { "type": "name", "original": "中村さん" },
+          { "type": "name", "original": "小林様" }
+        ]
+      },
+      "tags": ["name", "multiple_suffixes", "multiple_pii"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PS-013",
+      "input": {
+        "text": "田中さんが提案してきたアプローチは面白いけど、松田さんが懸念を示していた。どちらの意見も正しいと思う。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 2,
+        "expected_replacements": [
+          { "type": "name", "original": "田中さん" },
+          { "type": "name", "original": "松田さん" }
+        ]
+      },
+      "tags": ["name", "discussion_context", "multiple_pii"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PS-014",
+      "input": {
+        "text": "FictivaTech社との契約が先週締結した。来月からプロジェクトが本格始動する。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 1,
+        "expected_replacements": [
+          { "type": "name", "original": "FictivaTech社" }
+        ],
+        "should_not_contain": ["FictivaTech"]
+      },
+      "tags": ["company_name", "single_pii"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PS-015",
+      "input": {
+        "text": "「アルファプロジェクト」の第一フェーズが完了した。次はベータフェーズへ移行する。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 1,
+        "expected_replacements": [
+          { "type": "name", "original": "アルファプロジェクト" }
+        ]
+      },
+      "tags": ["project_name", "single_pii"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PS-016",
+      "input": {
+        "text": "今日は木村さんとNovaSystems株式会社を訪問した。ProjectXの進捗について話した。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 3,
+        "expected_replacements": [
+          { "type": "name", "original": "木村さん" },
+          { "type": "name", "original": "NovaSystems株式会社" },
+          { "type": "name", "original": "ProjectX" }
+        ]
+      },
+      "tags": ["name", "company_name", "project_name", "multiple_pii"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "PS-017",
+      "input": {
+        "text": "スタートアップのMiracle Labs Inc.に出資の打診があった。代表の渡辺さんとは以前から知り合い。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 2,
+        "expected_replacements": [
+          { "type": "name", "original": "Miracle Labs Inc." },
+          { "type": "name", "original": "渡辺さん" }
+        ]
+      },
+      "tags": ["company_name", "name", "multiple_pii"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "PS-018",
+      "input": {
+        "text": "社内コードネーム「Project Phoenix」の情報は外部に漏らさないよう高橋部長から厳命された。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 2,
+        "expected_replacements": [
+          { "type": "name", "original": "Project Phoenix" },
+          { "type": "name", "original": "高橋部長" }
+        ]
+      },
+      "tags": ["project_name", "name", "title_suffix", "multiple_pii"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "PS-019",
+      "input": {
+        "text": "今日はとても生産的な一日だった。コードレビューで有益なフィードバックをもらえた。"
+      },
+      "expected": {
+        "pii_removed": false,
+        "replacement_count": 0,
+        "expected_replacements": []
+      },
+      "tags": ["false_positive", "no_pii", "general_work"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PS-020",
+      "input": {
+        "text": "APIエンドポイントは /api/v2/users/{user_id} で、レスポンスは JSON 形式です。"
+      },
+      "expected": {
+        "pii_removed": false,
+        "replacement_count": 0,
+        "expected_replacements": []
+      },
+      "tags": ["false_positive", "no_pii", "technical_text"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PS-021",
+      "input": {
+        "text": "スプリントレビューの準備が整った。明日のデモに向けてチーム全員で最終確認する。"
+      },
+      "expected": {
+        "pii_removed": false,
+        "replacement_count": 0,
+        "expected_replacements": []
+      },
+      "tags": ["false_positive", "no_pii", "team_work"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PS-022",
+      "input": {
+        "text": "岡本さんのメール: okamoto@fictionaltech.jp と電話 080-1111-2222 の両方に連絡を入れた。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 3,
+        "expected_replacements": [
+          { "type": "name", "original": "岡本さん" },
+          { "type": "email", "original": "okamoto@fictionaltech.jp" },
+          { "type": "phone", "original": "080-1111-2222" }
+        ]
+      },
+      "tags": ["email", "phone", "name", "multiple_pii", "all_types"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "PS-023",
+      "input": {
+        "text": "CleverSoft株式会社の福田様から連絡があり、「OperationBlue」プロジェクトへの参加を打診された。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 3,
+        "expected_replacements": [
+          { "type": "name", "original": "CleverSoft株式会社" },
+          { "type": "name", "original": "福田様" },
+          { "type": "name", "original": "OperationBlue" }
+        ]
+      },
+      "tags": ["company_name", "name", "project_name", "multiple_pii"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "PS-024",
+      "input": {
+        "text": "設計書のレビュー依頼をdept-review@fictional-org.co.jpに送った。返答は明日中にもらえる予定。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 1,
+        "expected_replacements": [
+          { "type": "email", "original": "dept-review@fictional-org.co.jp" }
+        ]
+      },
+      "tags": ["email", "work_context", "single_pii"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PS-025",
+      "input": {
+        "text": "会議室を予約するため総務の前田さんに依頼した。特に問題なく手続きが完了した。"
+      },
+      "expected": {
+        "pii_removed": true,
+        "replacement_count": 1,
+        "expected_replacements": [
+          { "type": "name", "original": "前田さん" }
+        ]
+      },
+      "tags": ["name", "san_suffix", "work_context", "single_pii"],
+      "difficulty": "easy"
+    }
+  ]
+}
