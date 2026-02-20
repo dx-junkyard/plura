@@ -15,6 +15,9 @@ import type {
   ConversationIntent,
   ConversationResponse,
   ResearchPlan,
+  ProjectResponse,
+  ProjectListItem,
+  ProjectCreateRequest,
 } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
@@ -251,6 +254,28 @@ class ApiClient {
       exclude_ids: excludeIds,
     });
     return data;
+  }
+
+  // Projects (Flash Team)
+  async createProject(request: ProjectCreateRequest): Promise<ProjectResponse> {
+    const { data } = await this.client.post<ProjectResponse>('/projects/', request);
+    return data;
+  }
+
+  async getProject(projectId: string): Promise<ProjectResponse> {
+    const { data } = await this.client.get<ProjectResponse>(`/projects/${projectId}`);
+    return data;
+  }
+
+  async listMyProjects(): Promise<ProjectListItem[]> {
+    const { data } = await this.client.get<ProjectListItem[]>('/projects/');
+    return data;
+  }
+
+  async updateProjectStatus(projectId: string, newStatus: string): Promise<void> {
+    await this.client.patch(`/projects/${projectId}/status`, null, {
+      params: { new_status: newStatus },
+    });
   }
 }
 

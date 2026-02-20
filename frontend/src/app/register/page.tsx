@@ -7,11 +7,12 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useConversationStore } from '@/lib/store';
 
 export default function RegisterPage() {
   const router = useRouter();
   const { isAuthenticated, setUser } = useAuthStore();
+  const clearConversation = useConversationStore((s) => s.clearConversation);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -32,6 +33,7 @@ export default function RegisterPage() {
 
     try {
       const result = await api.register(email, password, displayName || undefined);
+      clearConversation();
       setUser(result.user);
       router.push('/');
     } catch (err: any) {
