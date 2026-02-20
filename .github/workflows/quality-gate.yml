@@ -1,0 +1,148 @@
+name: Quality Gate (LLM-as-a-Judge)
+
+on:
+  pull_request:
+    branches:
+      - main
+      - development
+    paths:
+      - "backend/app/services/**"
+      - "backend/tests/evaluators/**"
+      - "backend/tests/golden_datasets/**"
+
+  push:
+    branches:
+      - main
+      - development
+    paths:
+      - "backend/app/services/**"
+      - "backend/tests/evaluators/**"
+      - "backend/tests/golden_datasets/**"
+
+  # 手動トリガー: use_llm=true の場合のみ LLM Judge 評価が走る
+  workflow_dispatch:
+    inputs:
+      use_llm:
+        description: "LLM Judge を使用した評価を実行する（OpenAI APIコストが発生します）"
+        type: boolean
+        default: false
+
+jobs:
+  # ============================================================
+  # Rule-based evaluation: push / PR では常時実行（LLM 不要）
+  # ============================================================
+  rule-based-eval:
+    name: Rule-Based Evaluation
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "setuptools<70.0.0" wheel
+          pip install --no-build-isolation openai-whisper==20240930
+          pip install -r requirements.txt
+
+      - name: Run LLM-as-a-Judge Evaluation
+        run: |
+          if [ "${{ github.event.inputs.use_llm }}" = "true" ]; then
+            python -m tests.evaluators.run_evaluation --all --use-llm --ci
+          else
+            python -m tests.evaluators.run_evaluation --component privacy_sanitizer --ci
+          fi
+        env:
+          PYTHONPATH: .
+          DATABASE_URL: "sqlite+aiosqlite:///./test.db"
+          SECRET_KEY: "test-secret-key-for-ci-only"
+          OPENAI_API_KEY: "sk-test-dummy-key"
+          GOOGLE_CLOUD_PROJECT: "test-project"
+
+      - name: Upload evaluation reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-reports-rule-based
+          path: backend/tests/eval_reports/
+
+  # ============================================================
+  # LLM-as-a-Judge evaluation:
+  #   手動トリガー（workflow_dispatch）かつ use_llm=true の場合のみ実行
+  # ============================================================
+  llm-eval:
+    name: LLM-as-a-Judge Evaluation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.use_llm == true
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "setuptools<70.0.0" wheel
+          pip install --no-build-isolation openai-whisper==20240930
+          pip install -r requirements.txt
+
+      - name: Run LLM evaluation (all components)
+        run: |
+          python -m tests.evaluators.run_evaluation --all --use-llm --ci
+        env:
+          PYTHONPATH: .
+          DATABASE_URL: "sqlite+aiosqlite:///./test.db"
+          SECRET_KEY: "test-secret-key-for-ci-only"
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+
+      - name: Upload evaluation reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-reports-llm
+          path: backend/tests/eval_reports/
+
+      - name: Check quality gate
+        run: |
+          python -c "
+          import json, sys
+          from pathlib import Path
+          reports_dir = Path('tests/eval_reports')
+          if not reports_dir.exists():
+              print('No reports found')
+              sys.exit(1)
+          failed = []
+          for f in reports_dir.glob('*_report.json'):
+              report = json.load(open(f))
+              rate = report.get('passed_cases', 0) / max(report.get('total_cases', 1), 1)
+              comp = report.get('component', f.stem)
+              print(f'{comp}: pass_rate={rate:.1%}, avg_scores={report.get(\"average_scores\", {})}')
+              if rate < 0.70:
+                  failed.append(f'{comp}: {rate:.1%}')
+          if failed:
+              print(f'\nQuality Gate FAILED:')
+              for fc in failed:
+                  print(f'  - {fc}')
+              sys.exit(1)
+          print('\nQuality Gate PASSED')
+          "
