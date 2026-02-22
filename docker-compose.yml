@@ -111,12 +111,12 @@ services:
       - ./.gcp:/root/.config/gcloud
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # Celery Worker
-  celery-worker:
+  # Celery Worker (Fast Queue) - リアルタイム応答に影響するタスク
+  worker-fast:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: mindyard-celery-worker
+    container_name: mindyard-worker-fast
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
@@ -141,7 +141,57 @@ services:
     volumes:
       - ./backend:/app
       - ./.gcp:/root/.config/gcloud
-    command: celery -A app.workers.celery_app worker --loglevel=info -Q layer1,layer2,celery
+    command: celery -A app.workers.celery_app worker --loglevel=info -Q layer1,layer2,celery -n fast@%h
+
+  # Celery Worker (Heavy Queue) - Policy Weaver等の重いLLM処理
+  worker-heavy:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mindyard-worker-heavy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      QDRANT_HOST: ${QDRANT_HOST}
+      QDRANT_PORT: ${QDRANT_PORT}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Google Cloud / Gen AI (Gemini)
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_APPLICATION_CREDENTIALS: /app/.config/gcloud/application_default_credentials.json
+      # LLM Configuration (Multi-Provider)
+      LLM_CONFIG_DEEP: ${LLM_CONFIG_DEEP:-}
+      LLM_CONFIG_BALANCED: ${LLM_CONFIG_BALANCED:-}
+      LLM_CONFIG_FAST: ${LLM_CONFIG_FAST:-}
+      EMBEDDING_CONFIG: ${EMBEDDING_CONFIG:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./.gcp:/root/.config/gcloud
+    command: celery -A app.workers.celery_app worker --loglevel=info -Q heavy_queue -n heavy@%h --concurrency=2
+
+  # Celery Beat - スケジュール実行（TTL切れポリシー管理等）
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mindyard-celery-beat
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A app.workers.celery_app beat --loglevel=info
 
   # Frontend (Next.js)
   frontend:
