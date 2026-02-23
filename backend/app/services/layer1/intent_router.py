@@ -390,6 +390,41 @@ class IntentRouter:
             },
         )
 
+        # ── Semantic Router: 短い入力の先行判定 ──
+        # 50文字以下の入力はLLMに渡す前にEmbeddingベースで分類する。
+        # 「要約して」「教えて」などの明確な指示がEmpathyに誤爆するのを防ぐ。
+        if len(input_text.strip()) <= semantic_router.SHORT_INPUT_MAX_LEN:
+            try:
+                sr_result = await semantic_router.route(input_text)
+                if sr_result:
+                    intent = sr_result["intent"]
+                    confidence = float(sr_result["confidence"])
+                    logger.info(
+                        "classify completed (semantic_router)",
+                        metadata={
+                            "intent": intent.value,
+                            "semantic_intent": sr_result["semantic_intent"],
+                            "confidence": confidence,
+                            "method": "semantic_router",
+                        },
+                    )
+                    return {
+                        "intent": intent,
+                        "confidence": confidence,
+                        "primary_intent": intent,
+                        "secondary_intent": ConversationIntent.CHAT,
+                        "primary_confidence": confidence,
+                        "secondary_confidence": 0.0,
+                        "previous_evaluation": PreviousEvaluation.NONE,
+                        "needs_probing": False,
+                        "reasoning": f"SemanticRouter: {sr_result['semantic_intent']} (cos={confidence:.3f})",
+                    }
+            except Exception as sr_err:
+                logger.debug(
+                    "SemanticRouter pre-classification failed (non-critical)",
+                    metadata={"error": str(sr_err)},
+                )
+
         provider = self._get_provider()
         if not provider:
             result = self._fallback_classify(input_text)
