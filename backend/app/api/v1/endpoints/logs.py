@@ -24,6 +24,7 @@ from app.schemas.raw_log import (
 )
 from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer1.conversation_agent import conversation_agent
+from app.services.layer1.intent_router import semantic_router
 from app.services.layer1.situation_router import situation_router
 from app.workers.tasks import analyze_log_structure, process_log_for_insight, run_deep_research_task
 from app.core.config import settings
@@ -103,6 +104,31 @@ async def create_log(
         log.tags = analysis.get("tags")
         log.metadata_analysis = analysis.get("metadata_analysis")
         log.is_analyzed = True
+
+        # ── Semantic Router: 短い入力のEmpathy誤爆防止 ──
+        # 50文字以下の入力に対してEmbeddingベースで意図を判定し、
+        # 要約・検索・知識系なら emotion_scores をリセットして
+        # StructuralAnalyzer が Empathy モードに誤爆するのを防ぐ。
+        if len(log_in.content.strip()) <= semantic_router.SHORT_INPUT_MAX_LEN:
+            try:
+                semantic_result = await semantic_router.route(log_in.content)
+                if semantic_result and semantic_router.is_non_empathy_intent(
+                    semantic_result.get("semantic_intent", "")
+                ):
+                    _logger = logging.getLogger(__name__)
+                    _logger.info(
+                        "SemanticRouter override: resetting emotion_scores for short non-empathy input. "
+                        "semantic_intent=%s, confidence=%.3f, input=%.40s",
+                        semantic_result.get("semantic_intent"),
+                        semantic_result.get("confidence", 0),
+                        log_in.content,
+                    )
+                    log.emotion_scores = {"neutral": 0.1}
+                    log.emotions = ["neutral"]
+            except Exception as sr_err:
+                _logger = logging.getLogger(__name__)
+                _logger.debug("SemanticRouter.route failed (non-critical): %s", sr_err)
+
         await session.commit()
         await session.refresh(log)
     except Exception:

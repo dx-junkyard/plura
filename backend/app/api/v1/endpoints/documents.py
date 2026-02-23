@@ -21,6 +21,7 @@ from app.schemas.document import (
     DocumentResponse,
     DocumentListResponse,
     DocumentUploadResponse,
+    DocumentStatusResponse,
     PresignedUrlResponse,
     PrivateRAGSearchResponse,
     PrivateRAGSearchResult,
@@ -171,6 +172,47 @@ async def get_document(
         )
 
     return DocumentResponse.model_validate(doc)
+
+
+@router.get("/{document_id}/status", response_model=DocumentStatusResponse)
+async def get_document_status(
+    document_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    ドキュメントの処理状態を取得（ポーリング用軽量エンドポイント）
+
+    フロントエンドから数秒おきにポーリングし、
+    READY になった時点でユーザーに完了通知を表示する。
+    """
+    result = await session.execute(
+        select(Document).where(
+            Document.id == document_id,
+            Document.user_id == current_user.id,
+        )
+    )
+    doc = result.scalar_one_or_none()
+
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found",
+        )
+
+    message_map = {
+        DocumentStatus.UPLOADING.value: "アップロード中...",
+        DocumentStatus.PROCESSING.value: "PDFを学習中...",
+        DocumentStatus.READY.value: "PDFの学習が完了しました",
+        DocumentStatus.ERROR.value: doc.error_message or "処理に失敗しました",
+    }
+
+    return DocumentStatusResponse(
+        id=doc.id,
+        filename=doc.filename,
+        status=doc.status,
+        message=message_map.get(doc.status, "処理中..."),
+    )
 
 
 @router.get("/{document_id}/presigned-url", response_model=PresignedUrlResponse)
