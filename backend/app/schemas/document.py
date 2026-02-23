@@ -54,6 +54,14 @@ class PresignedUrlResponse(BaseModel):
     expires_in_seconds: int
 
 
+class DocumentStatusResponse(BaseModel):
+    """ドキュメント処理状態レスポンス（ポーリング用軽量版）"""
+    id: uuid.UUID
+    filename: str
+    status: str
+    message: str
+
+
 class PrivateRAGSearchResult(BaseModel):
     """Private RAG 検索結果"""
     document_id: str

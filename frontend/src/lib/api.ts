@@ -315,6 +315,13 @@ class ApiClient {
     );
     return data;
   }
+
+  async getDocumentStatus(documentId: string): Promise<{ id: string; filename: string; status: string; message: string }> {
+    const { data } = await this.client.get<{ id: string; filename: string; status: string; message: string }>(
+      `/documents/${documentId}/status`,
+    );
+    return data;
+  }
 }
 
 export const api = new ApiClient();

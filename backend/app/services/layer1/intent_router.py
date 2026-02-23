@@ -9,8 +9,13 @@ PLURA - Intent Router (Hypothesis-Driven)
 - deep_dive: 課題解決・深掘り
 - brainstorm: 発想・アイデア出し
 - probe: 意図確認（確信度が低い場合の探り）
+
+Semantic Router:
+- 短い入力（50文字以下）に対してEmbeddingベースの軽量分類を行う
+- LLMの深読みによるEmpathy誤爆を防止する
 """
-from typing import Any, Dict, Optional
+import math
+from typing import Any, Dict, List, Optional
 
 from app.core.llm import llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
@@ -106,6 +111,225 @@ _KEYWORD_MAP = {
 }
 
 
+class SemanticRouter:
+    """
+    Embeddingベースの軽量意図分類器 (Semantic Router)
+
+    短い入力（50文字以下）に対してLLMを呼ばずに、
+    事前定義したアンカーテキスト群とのコサイン類似度で即座にIntentを決定する。
+
+    目的:
+    - 「要約して」「教えて」のような短い指示文に対し、
+      LLMが過剰解釈してEmpathyモードに誤爆するのを防ぐ。
+    - アンカーEmbeddingはインスタンスにキャッシュし、初回のみ計算する。
+    """
+
+    # 各Intentの代表的なアンカーテキスト
+    _INTENT_ANCHORS: Dict[str, List[str]] = {
+        "summarize": [
+            "要約して", "まとめて", "要点を教えて", "サマリーを教えて",
+            "概要を教えて", "論文を要約して", "内容をまとめて",
+            "要約をおしえてほしい", "内容を教えて", "まとめてほしい",
+            "要約お願い", "サマリー", "要点は？", "ざっくり教えて",
+        ],
+        "deep_dive": [
+            "詳しく教えて", "分析して", "解説して", "教えて",
+            "について教えて", "詳細を教えて", "これについて教えて",
+            "詳しく説明して", "解析して", "調べて",
+        ],
+        "knowledge": [
+            "とは何ですか", "何ですか", "どういう意味", "意味は",
+            "教えてください", "知りたい", "とは", "って何",
+        ],
+        "empathy": [
+            "疲れた", "つらい", "しんどい", "もう無理", "悲しい",
+            "不安です", "怖い", "寂しい", "ストレス溜まる", "辛い",
+            "しんどいです", "消えたい", "もうダメ",
+        ],
+        "state_share": [
+            "眠い", "お腹すいた", "暑い", "寒い", "いい天気",
+            "気分がいい", "頭痛い", "体調悪い", "疲れた", "眠たい",
+        ],
+        "chat": [
+            "おはよう", "こんにちは", "ありがとう", "よろしく",
+            "おやすみ", "はじめまして", "やあ", "ねえ",
+        ],
+    }
+
+    # Semantic intent → ConversationIntent のマッピング
+    _TO_CONVERSATION_INTENT: Dict[str, ConversationIntent] = {
+        "summarize": ConversationIntent.KNOWLEDGE,
+        "deep_dive": ConversationIntent.DEEP_DIVE,
+        "knowledge": ConversationIntent.KNOWLEDGE,
+        "empathy": ConversationIntent.EMPATHY,
+        "state_share": ConversationIntent.STATE_SHARE,
+        "chat": ConversationIntent.CHAT,
+    }
+
+    # この閾値以上のコサイン類似度があれば確信とみなす
+    _SIMILARITY_THRESHOLD = 0.45
+
+    # 短い入力の最大文字数
+    SHORT_INPUT_MAX_LEN = 50
+
+    def __init__(self) -> None:
+        # アンカーEmbeddingのキャッシュ: {intent_name: List[List[float]]}
+        self._anchor_embeddings: Optional[Dict[str, List[List[float]]]] = None
+
+    async def _get_embedding_provider(self):
+        """EmbeddingManagerからプロバイダーを取得"""
+        try:
+            from app.core.embedding import embedding_manager
+            return embedding_manager.get_provider()
+        except Exception:
+            return None
+
+    async def _ensure_anchor_embeddings(self) -> bool:
+        """
+        アンカーテキストのEmbeddingをキャッシュ（初回のみ計算）
+        Returns: キャッシュ準備ができているか
+        """
+        if self._anchor_embeddings is not None:
+            return True
+
+        provider = await self._get_embedding_provider()
+        if not provider:
+            return False
+
+        try:
+            await provider.initialize()
+            cache: Dict[str, List[List[float]]] = {}
+            for intent_name, anchors in self._INTENT_ANCHORS.items():
+                embeddings = await provider.embed_texts(anchors)
+                if embeddings:
+                    cache[intent_name] = embeddings
+            self._anchor_embeddings = cache
+            logger.info(
+                "SemanticRouter: anchor embeddings cached",
+                metadata={"intents": list(cache.keys())},
+            )
+            return True
+        except Exception as e:
+            logger.warning(
+                "SemanticRouter: failed to cache anchor embeddings",
+                metadata={"error": str(e)},
+            )
+            return False
+
+    @staticmethod
+    def _cosine_similarity(a: List[float], b: List[float]) -> float:
+        """コサイン類似度を計算"""
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = math.sqrt(sum(x * x for x in a))
+        norm_b = math.sqrt(sum(y * y for y in b))
+        if norm_a == 0.0 or norm_b == 0.0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    def _max_similarity_for_intent(
+        self,
+        input_emb: List[float],
+        anchor_embs: List[List[float]],
+    ) -> float:
+        """入力EmbeddingとIntentのアンカー群の最大コサイン類似度を返す"""
+        return max(
+            self._cosine_similarity(input_emb, anchor)
+            for anchor in anchor_embs
+        )
+
+    async def route(
+        self,
+        input_text: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        短い入力をEmbeddingベースで意図分類する。
+
+        入力が SHORT_INPUT_MAX_LEN 文字を超える場合は None を返し、
+        通常の LLM ルーティングに委ねる。
+
+        Returns:
+            {
+                "intent": ConversationIntent,
+                "semantic_intent": str,   # "summarize" | "deep_dive" | etc.
+                "confidence": float,
+                "method": "semantic_router",
+            }
+            または None（判定できない場合・入力が長い場合）
+        """
+        text = input_text.strip()
+        if len(text) > self.SHORT_INPUT_MAX_LEN:
+            return None
+
+        provider = await self._get_embedding_provider()
+        if not provider:
+            return None
+
+        if not await self._ensure_anchor_embeddings():
+            return None
+
+        try:
+            await provider.initialize()
+            input_emb = await provider.embed_text(text)
+            if not input_emb:
+                return None
+        except Exception as e:
+            logger.debug(
+                "SemanticRouter: embed_text failed",
+                metadata={"error": str(e)},
+            )
+            return None
+
+        # 各Intentとのコサイン類似度を計算し、最大スコアのIntentを選ぶ
+        best_intent: Optional[str] = None
+        best_score = 0.0
+
+        for intent_name, anchor_embs in self._anchor_embeddings.items():
+            score = self._max_similarity_for_intent(input_emb, anchor_embs)
+            if score > best_score:
+                best_score = score
+                best_intent = intent_name
+
+        if best_intent is None or best_score < self._SIMILARITY_THRESHOLD:
+            logger.debug(
+                "SemanticRouter: no confident match",
+                metadata={"best_intent": best_intent, "best_score": best_score},
+            )
+            return None
+
+        conversation_intent = self._TO_CONVERSATION_INTENT.get(
+            best_intent, ConversationIntent.CHAT
+        )
+
+        logger.info(
+            "SemanticRouter: routed",
+            metadata={
+                "input_preview": text[:40],
+                "semantic_intent": best_intent,
+                "conversation_intent": conversation_intent.value,
+                "confidence": round(best_score, 3),
+            },
+        )
+
+        return {
+            "intent": conversation_intent,
+            "semantic_intent": best_intent,
+            "confidence": best_score,
+            "method": "semantic_router",
+        }
+
+    def is_non_empathy_intent(self, semantic_intent: str) -> bool:
+        """
+        感情系以外のIntentかどうかを判定する。
+        これに該当する場合、emotion_scoresをリセットして
+        StructuralAnalyzerのEmpathyモード誤爆を防ぐ。
+        """
+        return semantic_intent in ("summarize", "deep_dive", "knowledge", "chat")
+
+
+# SemanticRouter シングルトン
+semantic_router = SemanticRouter()
+
+
 class IntentRouter:
     """
     Intent Router (仮説駆動型意図分類器)
@@ -165,6 +389,41 @@ class IntentRouter:
                 "has_prev_context": prev_context is not None,
             },
         )
+
+        # ── Semantic Router: 短い入力の先行判定 ──
+        # 50文字以下の入力はLLMに渡す前にEmbeddingベースで分類する。
+        # 「要約して」「教えて」などの明確な指示がEmpathyに誤爆するのを防ぐ。
+        if len(input_text.strip()) <= semantic_router.SHORT_INPUT_MAX_LEN:
+            try:
+                sr_result = await semantic_router.route(input_text)
+                if sr_result:
+                    intent = sr_result["intent"]
+                    confidence = float(sr_result["confidence"])
+                    logger.info(
+                        "classify completed (semantic_router)",
+                        metadata={
+                            "intent": intent.value,
+                            "semantic_intent": sr_result["semantic_intent"],
+                            "confidence": confidence,
+                            "method": "semantic_router",
+                        },
+                    )
+                    return {
+                        "intent": intent,
+                        "confidence": confidence,
+                        "primary_intent": intent,
+                        "secondary_intent": ConversationIntent.CHAT,
+                        "primary_confidence": confidence,
+                        "secondary_confidence": 0.0,
+                        "previous_evaluation": PreviousEvaluation.NONE,
+                        "needs_probing": False,
+                        "reasoning": f"SemanticRouter: {sr_result['semantic_intent']} (cos={confidence:.3f})",
+                    }
+            except Exception as sr_err:
+                logger.debug(
+                    "SemanticRouter pre-classification failed (non-critical)",
+                    metadata={"error": str(sr_err)},
+                )
 
         provider = self._get_provider()
         if not provider:

@@ -62,6 +62,10 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
   const [uploadResult, setUploadResult] = useState<DocumentUploadResponse | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // PDF処理完了ポーリング state
+  const [pollingDocumentId, setPollingDocumentId] = useState<string | null>(null);
+  const [pollingDocumentFilename, setPollingDocumentFilename] = useState<string | null>(null);
+  const documentPollingRef = useRef<NodeJS.Timeout>();
 
   // Deep Research state
   const [isResearching, setIsResearching] = useState(false);
@@ -379,13 +383,17 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
       const systemMsg: ChatMessage = {
         id: `upload-${result.id}`,
         type: 'system',
-        content: `PDF「${result.filename}」をアップロードしました。処理が完了すると、会話の中でドキュメントの内容を参照できるようになります。`,
+        content: `PDF「${result.filename}」をアップロードしました。学習完了までしばらくお待ちください...`,
         timestamp: new Date().toISOString(),
       };
       addMessage(systemMsg);
 
       // 3秒後に結果表示をクリア
       setTimeout(() => setUploadResult(null), 3000);
+
+      // 処理完了までポーリングを開始
+      setPollingDocumentId(String(result.id));
+      setPollingDocumentFilename(result.filename);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'アップロードに失敗しました。';
       setUploadError(msg);
@@ -553,6 +561,69 @@ PLURA で思考を整理しました`;
       }
     };
   }, [researchLogId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // PDF処理完了ポーリング: status が ready になったらトースト通知
+  useEffect(() => {
+    if (!pollingDocumentId) return;
+
+    const filename = pollingDocumentFilename;
+    let retries = 0;
+    const MAX_RETRIES = 40; // 3秒 × 40 = 最大2分
+
+    const pollForDocumentReady = async () => {
+      try {
+        const docStatus = await api.getDocumentStatus(pollingDocumentId);
+
+        if (docStatus.status === 'ready') {
+          const completionMsg: ChatMessage = {
+            id: `doc-ready-${pollingDocumentId}`,
+            type: 'system',
+            content: `「${filename || docStatus.filename}」のPDF学習が完了しました。会話の中でドキュメントの内容を参照できます。`,
+            timestamp: new Date().toISOString(),
+          };
+          addMessage(completionMsg);
+          clearInterval(documentPollingRef.current);
+          setPollingDocumentId(null);
+          setPollingDocumentFilename(null);
+        } else if (docStatus.status === 'error') {
+          const errorMsg: ChatMessage = {
+            id: `doc-error-${pollingDocumentId}`,
+            type: 'system',
+            content: `「${filename || docStatus.filename}」の学習に失敗しました: ${docStatus.message}`,
+            timestamp: new Date().toISOString(),
+          };
+          addMessage(errorMsg);
+          clearInterval(documentPollingRef.current);
+          setPollingDocumentId(null);
+          setPollingDocumentFilename(null);
+        } else {
+          retries++;
+          if (retries >= MAX_RETRIES) {
+            clearInterval(documentPollingRef.current);
+            setPollingDocumentId(null);
+            setPollingDocumentFilename(null);
+          }
+        }
+      } catch {
+        // ネットワークエラーは無視して継続
+        retries++;
+        if (retries >= MAX_RETRIES) {
+          clearInterval(documentPollingRef.current);
+          setPollingDocumentId(null);
+          setPollingDocumentFilename(null);
+        }
+      }
+    };
+
+    pollForDocumentReady();
+    documentPollingRef.current = setInterval(pollForDocumentReady, 3000);
+
+    return () => {
+      if (documentPollingRef.current) {
+        clearInterval(documentPollingRef.current);
+      }
+    };
+  }, [pollingDocumentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Deep Research Step 1: 「提案」— 調査計画書を生成させる
   const handleDeepResearch = useCallback(async (message: ChatMessage) => {
