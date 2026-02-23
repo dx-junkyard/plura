@@ -230,6 +230,105 @@ class PrivateRAG:
             logger.error(f"Failed to search private docs: {e}", exc_info=True)
             return []
 
+    async def get_recent_document_chunks(
+        self,
+        user_id: str,
+        limit_docs: int = 1,
+        limit_chunks: int = 500,
+    ) -> List[Dict]:
+        """
+        ユーザーの最新ドキュメントのチャンクをメタデータフィルタで直接取得する。
+
+        類似度検索を行わず、RDBで最新のREADYドキュメントを特定した上で
+        QdrantのPayloadフィルタを使いチャンクを全件取得する。
+        取得したチャンクはchunk_index順にソートして返す。
+
+        Args:
+            user_id: ユーザーID
+            limit_docs: 対象とする最新ドキュメントの件数（デフォルト1）
+            limit_chunks: 1ドキュメントあたり取得するチャンク数の上限
+
+        Returns:
+            chunk_index順にソートされたチャンクのリスト
+        """
+        if not self.qdrant_client:
+            await self.initialize()
+
+        if not self.qdrant_client:
+            return []
+
+        try:
+            from sqlalchemy import desc, select
+
+            from app.db.base import async_session_maker
+            from app.models.document import Document, DocumentStatus
+
+            # 1. RDB から対象ユーザーの最新 READY ドキュメントを取得
+            async with async_session_maker() as session:
+                result = await session.execute(
+                    select(Document)
+                    .where(
+                        Document.user_id == uuid.UUID(user_id),
+                        Document.status == DocumentStatus.READY,
+                    )
+                    .order_by(desc(Document.created_at))
+                    .limit(limit_docs)
+                )
+                documents = result.scalars().all()
+
+            if not documents:
+                logger.info(f"No READY documents found for user {user_id}")
+                return []
+
+            # 2. 各ドキュメントのチャンクを Qdrant の scroll で取得（ベクトル検索不要）
+            all_chunks: List[Dict] = []
+            for doc in documents:
+                doc_id_str = str(doc.id)
+                try:
+                    scroll_result, _ = self.qdrant_client.scroll(
+                        collection_name=self.collection_name,
+                        scroll_filter=models.Filter(
+                            must=[
+                                models.FieldCondition(
+                                    key="document_id",
+                                    match=models.MatchValue(value=doc_id_str),
+                                )
+                            ]
+                        ),
+                        limit=limit_chunks,
+                        with_payload=True,
+                        with_vectors=False,
+                    )
+                    for point in scroll_result:
+                        all_chunks.append(
+                            {
+                                "document_id": point.payload.get("document_id"),
+                                "filename": point.payload.get("filename"),
+                                "chunk_index": point.payload.get("chunk_index"),
+                                "text": point.payload.get("text"),
+                            }
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"Failed to scroll chunks for document {doc_id_str}: {e}",
+                        exc_info=True,
+                    )
+
+            # 3. ドキュメント内の元の順序を維持するため chunk_index でソート
+            all_chunks.sort(
+                key=lambda c: (c.get("document_id", ""), c.get("chunk_index", 0))
+            )
+
+            logger.info(
+                f"Retrieved {len(all_chunks)} chunks from {len(documents)} document(s) "
+                f"for user {user_id}"
+            )
+            return all_chunks
+
+        except Exception as e:
+            logger.error(f"Failed to get recent document chunks: {e}", exc_info=True)
+            return []
+
     async def delete_document_chunks(self, document_id: str) -> bool:
         """ドキュメントのすべてのチャンクを削除"""
         if not self.qdrant_client:
