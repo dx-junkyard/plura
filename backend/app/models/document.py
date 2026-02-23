@@ -23,6 +23,7 @@ from app.db.base import Base, utc_now
 
 if TYPE_CHECKING:
     from app.models.user import User
+    from app.models.project import Project
 
 
 class DocumentStatus(str, Enum):
@@ -52,6 +53,12 @@ class Document(Base):
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
+    )
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
 
@@ -129,6 +136,7 @@ class Document(Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User")
+    project: Mapped[Optional["Project"]] = relationship("Project")
 
     def __repr__(self) -> str:
         return f"<Document {self.id} '{self.filename}' by {self.user_id}>"

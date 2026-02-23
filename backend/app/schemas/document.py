@@ -15,6 +15,7 @@ class DocumentResponse(BaseModel):
     """ドキュメントレスポンス"""
     id: uuid.UUID
     user_id: uuid.UUID
+    project_id: Optional[uuid.UUID] = None
     filename: str
     content_type: str
     file_size: int
@@ -45,6 +46,12 @@ class DocumentUploadResponse(BaseModel):
     file_size: int
     status: str
     message: str
+
+
+class PresignedUrlResponse(BaseModel):
+    """署名付きURLレスポンス"""
+    url: str
+    expires_in_seconds: int
 
 
 class PrivateRAGSearchResult(BaseModel):

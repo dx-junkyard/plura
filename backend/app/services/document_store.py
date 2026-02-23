@@ -5,6 +5,7 @@ PDFファイルのオブジェクトストレージ管理
 import io
 import logging
 import uuid
+from datetime import timedelta
 from typing import Optional
 
 from minio import Minio
@@ -100,6 +101,27 @@ class DocumentStore:
             return data
         except S3Error as e:
             logger.error(f"Failed to download from MinIO: {e}", exc_info=True)
+            return None
+
+    async def generate_presigned_url(
+        self,
+        object_key: str,
+        expires: timedelta = timedelta(hours=1),
+    ) -> Optional[str]:
+        """署名付きダウンロードURLを生成"""
+        if not self._initialized:
+            await self.initialize()
+
+        try:
+            client = self._get_client()
+            url = client.presigned_get_object(
+                bucket_name=settings.minio_bucket_name,
+                object_name=object_key,
+                expires=expires,
+            )
+            return url
+        except S3Error as e:
+            logger.error(f"Failed to generate presigned URL: {e}", exc_info=True)
             return None
 
     async def delete_file(self, object_key: str) -> bool:

@@ -21,6 +21,7 @@ from app.schemas.document import (
     DocumentResponse,
     DocumentListResponse,
     DocumentUploadResponse,
+    PresignedUrlResponse,
     PrivateRAGSearchResponse,
     PrivateRAGSearchResult,
 )
@@ -170,6 +171,49 @@ async def get_document(
         )
 
     return DocumentResponse.model_validate(doc)
+
+
+@router.get("/{document_id}/presigned-url", response_model=PresignedUrlResponse)
+async def get_presigned_url(
+    document_id: uuid.UUID,
+    expires_hours: int = Query(1, ge=1, le=24, description="URL有効期間（時間）"),
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    署名付きダウンロードURLを取得
+
+    一時的なURLを発行してクライアントから直接MinIOのファイルにアクセスさせる。
+    """
+    from datetime import timedelta
+
+    result = await session.execute(
+        select(Document).where(
+            Document.id == document_id,
+            Document.user_id == current_user.id,
+        )
+    )
+    doc = result.scalar_one_or_none()
+
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found",
+        )
+
+    expires = timedelta(hours=expires_hours)
+    url = await document_store.generate_presigned_url(doc.object_key, expires=expires)
+
+    if not url:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="署名付きURLの生成に失敗しました。",
+        )
+
+    return PresignedUrlResponse(
+        url=url,
+        expires_in_seconds=int(expires.total_seconds()),
+    )
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

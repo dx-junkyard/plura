@@ -224,6 +224,7 @@ export type DocumentStatus = 'uploading' | 'processing' | 'ready' | 'error';
 export interface DocumentResponse {
   id: string;
   user_id: string;
+  project_id: string | null;
   filename: string;
   content_type: string;
   file_size: number;
