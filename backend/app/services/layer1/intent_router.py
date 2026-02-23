@@ -54,6 +54,7 @@ Available Intents:
 - `knowledge`: Factual questions, "how-to".
 - `deep_dive`: Complex problem solving, analysis, structural thinking.
 - `brainstorm`: Idea generation, "what if".
+- `summarize`: User wants to summarize or get an overview of uploaded documents. Keywords: 要約, まとめ, サマリー, 概要, ざっくり教えて.
 
 ### Task 3: Decision
 - If Confidence is high (> 0.8), select the `primary_intent`.
@@ -158,7 +159,7 @@ class SemanticRouter:
 
     # Semantic intent → ConversationIntent のマッピング
     _TO_CONVERSATION_INTENT: Dict[str, ConversationIntent] = {
-        "summarize": ConversationIntent.KNOWLEDGE,
+        "summarize": ConversationIntent.SUMMARIZE,
         "deep_dive": ConversationIntent.DEEP_DIVE,
         "knowledge": ConversationIntent.KNOWLEDGE,
         "empathy": ConversationIntent.EMPATHY,
@@ -493,6 +494,7 @@ class IntentRouter:
             "knowledge": ConversationIntent.KNOWLEDGE,
             "deep_dive": ConversationIntent.DEEP_DIVE,
             "brainstorm": ConversationIntent.BRAINSTORM,
+            "summarize": ConversationIntent.SUMMARIZE,
         }
 
         eval_map = {
