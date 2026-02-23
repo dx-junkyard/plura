@@ -49,24 +49,25 @@ def _get_provider() -> Optional[LLMProvider]:
         return None
 
 
-async def _retrieve_document_chunks(user_id: str, query: str) -> List[Dict]:
+async def _retrieve_document_chunks(user_id: str) -> List[Dict]:
     """
-    PrivateRAG からユーザーのドキュメントチャンクを取得する。
+    PrivateRAG からユーザーの最新ドキュメントのチャンクをメタデータ抽出で取得する。
 
-    要約のため、通常より高い limit・低い score_threshold で幅広く取得する。
+    類似度検索ではなく、直近にアップロードされた READY ドキュメントのチャンクを
+    Qdrant の Payload フィルタで直接取得する（limit_docs=1: 最新1ファイルのみ）。
     """
     try:
         from app.services.layer1.private_rag import private_rag
 
-        results = await private_rag.search(
-            query=query,
+        results = await private_rag.get_recent_document_chunks(
             user_id=user_id,
-            limit=10,
-            score_threshold=0.3,
+            limit_docs=1,
         )
         return results
     except Exception as e:
-        logger.warning("Private RAG search failed", metadata={"error": str(e)})
+        logger.warning(
+            "Private RAG chunk retrieval failed", metadata={"error": str(e)}
+        )
         return []
 
 
@@ -95,7 +96,8 @@ async def run_summarize_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     要約ノード: PrivateRAG からドキュメントを取得し、LLM で要約する
 
-    1. PrivateRAG でユーザーのドキュメントチャンクを広範囲に検索
+    1. PrivateRAG で直近の READY ドキュメントのチャンクをメタデータフィルタで取得
+       （類似度検索は使用しない。limit_docs=1 で最新1ファイルのみを対象とする）
     2. チャンクをファイルごとに整理してコンテキストを構築
     3. LLM に要約を依頼
     4. ドキュメントが存在しない場合はアップロード案内を返す
@@ -109,9 +111,9 @@ async def run_summarize_node(state: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     # 1. PrivateRAG からドキュメントチャンクを取得
-    # クエリとして入力テキストを使用。"要約して" のような短い入力でも
-    # ドキュメント内容とある程度類似したチャンクが返されることを期待する。
-    chunks = await _retrieve_document_chunks(user_id, input_text)
+    # 意図が SUMMARIZE の場合は類似度検索を行わず、
+    # 直近にアップロードされた READY ドキュメントのチャンクをメタデータフィルタで取得する。
+    chunks = await _retrieve_document_chunks(user_id)
 
     if not chunks:
         logger.info(
