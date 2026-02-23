@@ -10,6 +10,7 @@ from app.models.user_state import UserState
 from app.models.user_topic_profile import UserTopicProfile
 from app.models.project import Project, ProjectStatus
 from app.models.policy import Policy, EnforcementLevel
+from app.models.document import Document, DocumentStatus
 
 __all__ = [
     "User",
@@ -25,4 +26,6 @@ __all__ = [
     "ProjectStatus",
     "Policy",
     "EnforcementLevel",
+    "Document",
+    "DocumentStatus",
 ]

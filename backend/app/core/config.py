@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     qdrant_collection_name: str = "mindyard_insights"
+    qdrant_private_collection_name: str = "mindyard_private_docs"
+
+    # MinIO Object Storage
+    minio_endpoint: str = "localhost:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin"
+    minio_bucket_name: str = "plura-documents"
+    minio_secure: bool = False
 
     # OpenAI
     openai_api_key: Optional[str] = None
