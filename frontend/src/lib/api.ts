@@ -18,6 +18,9 @@ import type {
   ProjectResponse,
   ProjectListItem,
   ProjectCreateRequest,
+  DocumentUploadResponse,
+  DocumentListResponse,
+  DocumentResponse,
 } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
@@ -276,6 +279,41 @@ class ApiClient {
     await this.client.patch(`/projects/${projectId}/status`, null, {
       params: { new_status: newStatus },
     });
+  }
+
+  // Documents (Private RAG)
+  async uploadDocument(file: File): Promise<DocumentUploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await this.client.post<DocumentUploadResponse>(
+      '/documents/upload',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return data;
+  }
+
+  async listDocuments(page: number = 1, pageSize: number = 20): Promise<DocumentListResponse> {
+    const { data } = await this.client.get<DocumentListResponse>('/documents/', {
+      params: { page, page_size: pageSize },
+    });
+    return data;
+  }
+
+  async getDocument(documentId: string): Promise<DocumentResponse> {
+    const { data } = await this.client.get<DocumentResponse>(`/documents/${documentId}`);
+    return data;
+  }
+
+  async deleteDocument(documentId: string): Promise<void> {
+    await this.client.delete(`/documents/${documentId}`);
+  }
+
+  async getDocumentPresignedUrl(documentId: string): Promise<{ url: string; expires_in_seconds: number }> {
+    const { data } = await this.client.get<{ url: string; expires_in_seconds: number }>(
+      `/documents/${documentId}/presigned-url`,
+    );
+    return data;
   }
 }
 

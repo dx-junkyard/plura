@@ -15,7 +15,7 @@ celery_app = Celery(
     "mindyard",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["app.workers.tasks", "app.workers.policy_tasks"],
+    include=["app.workers.tasks", "app.workers.policy_tasks", "app.workers.document_tasks"],
 )
 
 # Celery設定
@@ -43,12 +43,19 @@ celery_app.conf.task_routes = {
     # Policy Weaver タスク → heavy_queue
     "app.workers.policy_tasks.extract_policies_task": {"queue": "heavy_queue"},
     "app.workers.policy_tasks.expire_stale_policies_task": {"queue": "heavy_queue"},
+    # Document Processing タスク → heavy_queue
+    "app.workers.document_tasks.process_document_task": {"queue": "heavy_queue"},
+    "app.workers.document_tasks.delete_document_task": {"queue": "heavy_queue"},
 }
 
 # heavy_queue のタスクはタイムリミットを長くする
 celery_app.conf.task_annotations = {
     "app.workers.policy_tasks.extract_policies_task": {
         "time_limit": 600,  # 10分
+        "soft_time_limit": 540,
+    },
+    "app.workers.document_tasks.process_document_task": {
+        "time_limit": 600,  # 10分（大きいPDFの処理用）
         "soft_time_limit": 540,
     },
 }

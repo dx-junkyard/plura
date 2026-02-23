@@ -12,7 +12,7 @@ from alembic import context
 
 # Import your models here
 from app.db.base import Base
-from app.models import User, RawLog, InsightCard, Policy
+from app.models import User, RawLog, InsightCard, Policy, Document
 from app.core.config import settings
 
 # this is the Alembic Config object

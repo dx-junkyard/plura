@@ -9,12 +9,12 @@ import TextareaAutosize from 'react-textarea-autosize';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import { useRouter } from 'next/navigation';
-import { Send, Mic, MicOff, Loader2, ChevronDown, ChevronUp, Copy, Check, Lightbulb, MessageSquarePlus, Search, ThumbsUp, ThumbsDown, FileText, ExternalLink } from 'lucide-react';
+import { Send, Mic, MicOff, Loader2, ChevronDown, ChevronUp, Copy, Check, Lightbulb, MessageSquarePlus, Search, ThumbsUp, ThumbsDown, FileText, ExternalLink, Paperclip, X, FileUp } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useRecommendationStore, useConversationStore, rawLogToMessages } from '@/lib/store';
 import type { ChatMessage } from '@/lib/store';
 import { cn, formatRelativeTime } from '@/lib/utils';
-import type { AckResponse, RawLog, ResearchPlan } from '@/types';
+import type { AckResponse, RawLog, ResearchPlan, DocumentUploadResponse } from '@/types';
 
 // 整理プロセスのステップ定義
 interface AnalysisStep {
@@ -57,6 +57,12 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
   const [expandedAnalysisIds, setExpandedAnalysisIds] = useState<Set<string>>(new Set());
   // トーンフィードバック: メッセージIDごとに "gentler" | "sharper" | null
   const [toneFeedback, setToneFeedback] = useState<Record<string, 'gentler' | 'sharper'>>({});
+  // PDF Upload state
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<DocumentUploadResponse | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Deep Research state
   const [isResearching, setIsResearching] = useState(false);
   const [researchLogId, setResearchLogId] = useState<string | null>(null);
@@ -341,6 +347,53 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
       fetchRecommendations(value);
     }, 500);
   }, [fetchRecommendations]);
+
+  // PDF アップロードハンドラ
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // ファイル形式チェック
+    if (file.type !== 'application/pdf') {
+      setUploadError('PDF ファイルのみ対応しています。');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    // ファイルサイズチェック（50MB）
+    if (file.size > 50 * 1024 * 1024) {
+      setUploadError('ファイルサイズが上限（50MB）を超えています。');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+    setUploadResult(null);
+
+    try {
+      const result = await api.uploadDocument(file);
+      setUploadResult(result);
+
+      // アップロード成功メッセージを会話に追加
+      const systemMsg: ChatMessage = {
+        id: `upload-${result.id}`,
+        type: 'system',
+        content: `PDF「${result.filename}」をアップロードしました。処理が完了すると、会話の中でドキュメントの内容を参照できるようになります。`,
+        timestamp: new Date().toISOString(),
+      };
+      addMessage(systemMsg);
+
+      // 3秒後に結果表示をクリア
+      setTimeout(() => setUploadResult(null), 3000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'アップロードに失敗しました。';
+      setUploadError(msg);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, [addMessage]);
 
   // 送信ハンドラ
   const handleSubmit = async () => {
@@ -1122,7 +1175,43 @@ PLURA で思考を整理しました`;
           </div>
         )}
 
+        {/* アップロードエラー表示 */}
+        {uploadError && (
+          <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 flex items-center justify-between">
+            <span>{uploadError}</span>
+            <button onClick={() => setUploadError(null)} className="ml-2 text-red-400 hover:text-red-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* アップロード中インジケーター */}
+        {isUploading && (
+          <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-600 flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>PDF をアップロード中...</span>
+          </div>
+        )}
+
+        {/* アップロード成功表示 */}
+        {uploadResult && (
+          <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-600 flex items-center gap-2">
+            <FileUp className="w-4 h-4" />
+            <span>「{uploadResult.filename}」をアップロードしました。処理中...</span>
+          </div>
+        )}
+
+        {/* 非表示のファイル入力 */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf"
+          className="hidden"
+          onChange={handleFileUpload}
+        />
+
         <div className="flex items-end gap-2">
+          {/* 音声入力ボタン */}
           <button
             onClick={toggleRecording}
             disabled={isTranscribing || isSubmitting}
@@ -1146,6 +1235,25 @@ PLURA で思考を整理しました`;
             {/* 録音中インジケーター */}
             {isRecording && (
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-600 rounded-full animate-ping" />
+            )}
+          </button>
+
+          {/* PDF添付ボタン */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading || isRecording || isTranscribing}
+            className={cn(
+              'p-2 rounded-full transition-all',
+              isUploading
+                ? 'bg-blue-100 text-blue-500 cursor-not-allowed'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            )}
+            title="PDF を添付"
+          >
+            {isUploading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Paperclip className="w-5 h-5" />
             )}
           </button>
 
@@ -1184,7 +1292,7 @@ PLURA で思考を整理しました`;
         <p className="text-xs text-gray-400 mt-2 text-center">
           {isRecording
             ? '🔴 録音中 - マイクボタンを押して停止'
-            : 'Shift + Enter で改行 / Enter で送信 / マイクで音声入力'}
+            : 'Shift + Enter で改行 / Enter で送信 / マイクで音声入力 / クリップで PDF 添付'}
         </p>
       </div>
     </div>

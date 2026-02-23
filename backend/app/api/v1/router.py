@@ -4,7 +4,7 @@ PLURA - API v1 Router
 """
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, logs, insights, recommendations, conversation, projects, policies
+from app.api.v1.endpoints import auth, logs, insights, recommendations, conversation, projects, policies, documents
 
 api_router = APIRouter()
 
@@ -48,4 +48,10 @@ api_router.include_router(
     policies.router,
     prefix="/policies",
     tags=["ポリシー (Policy Weaver)"],
+)
+
+api_router.include_router(
+    documents.router,
+    prefix="/documents",
+    tags=["ドキュメント (Private RAG)"],
 )

@@ -28,6 +28,7 @@ Your goal is NOT to give answers, but to help the user unpack their thoughts and
    - "If this were true, what would be the consequence?"
    - "What is the core conflict here?"
 4. **Structure**: If the user's thought is messy, offer a tentative structure (e.g., "It sounds like there are three layers to this problem...").
+5. **Reference Documents**: If「参考ドキュメント」is provided, use it to ground your questions and structure.
 
 ### Tone:
 - Intellectual curiosity. Be fascinated by the user's problem.
@@ -44,13 +45,39 @@ def _get_provider() -> Optional[LLMProvider]:
         return None
 
 
+async def _retrieve_private_rag_context(user_id: str, query: str) -> str:
+    """Private RAG からユーザーのドキュメントを検索し、コンテキストを構築"""
+    try:
+        from app.services.layer1.private_rag import private_rag
+
+        results = await private_rag.search(
+            query=query,
+            user_id=user_id,
+            limit=3,
+            score_threshold=0.5,
+        )
+        if not results:
+            return ""
+
+        context_parts = ["【参考ドキュメント】"]
+        for r in results:
+            context_parts.append(
+                f"({r['filename']}) {r['text'][:400]}"
+            )
+        return "\n".join(context_parts)
+    except Exception as e:
+        logger.warning("Private RAG search failed", metadata={"error": str(e)})
+        return ""
+
+
 async def run_deep_dive_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    深掘りノード: 課題を構造化して解決策を提示
+    深掘りノード: Private RAG検索 + 課題を構造化して解決策を提示
 
     BALANCEDモデルを使用し、品質重視の回答を生成。
     """
     input_text = state["input_text"]
+    user_id = state.get("user_id", "")
     provider = _get_provider()
 
     if not provider:
@@ -60,11 +87,20 @@ async def run_deep_dive_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         await provider.initialize()
+
+        # Private RAG コンテキスト取得
+        rag_context = await _retrieve_private_rag_context(user_id, input_text)
+
+        user_message = input_text
+        if rag_context:
+            user_message = f"{input_text}\n\n{rag_context}"
+            logger.info("Private RAG context found", metadata={"context_length": len(rag_context)})
+
         logger.info("LLM request", metadata={"prompt_preview": input_text[:100]})
         result = await provider.generate_text(
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": input_text},
+                {"role": "user", "content": user_message},
             ],
             temperature=0.4,
         )
