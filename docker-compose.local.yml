@@ -45,6 +45,25 @@ services:
     environment:
       QDRANT__LOG_LEVEL: ${QDRANT__LOG_LEVEL}
 
+  # MinIO Object Storage (PDF等の原本ファイル保存)
+  minio:
+    image: minio/minio:latest
+    container_name: mindyard-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Backend API (FastAPI)
   backend:
     build:
@@ -72,6 +91,12 @@ services:
       LLM_CONFIG_BALANCED: ${LLM_CONFIG_BALANCED:-}
       LLM_CONFIG_FAST: ${LLM_CONFIG_FAST:-}
       EMBEDDING_CONFIG: ${EMBEDDING_CONFIG:-}
+      # MinIO Object Storage
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-plura-documents}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
     ports:
       - "8000:8000"
     depends_on:
@@ -81,6 +106,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+      minio:
+        condition: service_healthy
     volumes:
       - ./backend:/app
       - ./.gcp:/app/.config/gcloud
@@ -108,6 +135,12 @@ services:
       LLM_CONFIG_BALANCED: ${LLM_CONFIG_BALANCED:-}
       LLM_CONFIG_FAST: ${LLM_CONFIG_FAST:-}
       EMBEDDING_CONFIG: ${EMBEDDING_CONFIG:-}
+      # MinIO Object Storage
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-plura-documents}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -118,7 +151,7 @@ services:
       - ./.gcp:/app/.config/gcloud
     command: celery -A app.workers.celery_app worker --loglevel=info -Q layer1,layer2,celery -n fast@%h
 
-  # Celery Worker (Heavy Queue) - Policy Weaver等の重いLLM処理
+  # Celery Worker (Heavy Queue) - Policy Weaver等の重いLLM処理・PDF処理
   worker-heavy:
     build:
       context: ./backend
@@ -140,6 +173,12 @@ services:
       LLM_CONFIG_BALANCED: ${LLM_CONFIG_BALANCED:-}
       LLM_CONFIG_FAST: ${LLM_CONFIG_FAST:-}
       EMBEDDING_CONFIG: ${EMBEDDING_CONFIG:-}
+      # MinIO Object Storage
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-plura-documents}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -191,3 +230,4 @@ volumes:
   postgres_data:
   redis_data:
   qdrant_data:
+  minio_data:
