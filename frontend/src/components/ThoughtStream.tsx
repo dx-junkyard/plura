@@ -377,7 +377,7 @@ export function ThoughtStream({ selectedLogId, onClearSelection }: ThoughtStream
     setUploadResult(null);
 
     try {
-      const result = await api.uploadDocument(file);
+      const result = await api.uploadDocument(file, continuingThreadId);
       setUploadResult(result);
 
       // アップロード成功メッセージを会話に追加

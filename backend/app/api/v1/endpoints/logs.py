@@ -128,6 +128,14 @@ async def create_log(
                         )
                         log.emotion_scores = {"neutral": 0.1}
                         log.emotions = ["neutral"]
+                    # 構造分析スキップ判定のために semantic_intent をメタデータに保存する
+                    # （analyze_log_structure タスクはログIDしか受け取れないため）
+                    if _semantic_intent:
+                        if log.metadata_analysis is None:
+                            log.metadata_analysis = {}
+                        log.metadata_analysis["semantic_intent"] = _semantic_intent
+                        from sqlalchemy.orm.attributes import flag_modified as _flag_modified
+                        _flag_modified(log, "metadata_analysis")
             except Exception as sr_err:
                 _logger = logging.getLogger(__name__)
                 _logger.debug("SemanticRouter.route failed (non-critical): %s", sr_err)
@@ -165,8 +173,8 @@ async def create_log(
             _logger.error("Failed to queue deep research task: %s", e)
             conversation_reply = "Deep Researchの開始に失敗しました。"
 
-    elif log.intent != LogIntent.STATE:
-        # 状態共有（STATE）は即時の共感応答のみ返し、構造分析は実行しない
+    elif log.intent != LogIntent.STATE and _semantic_intent not in ("summarize", "chat"):
+        # STATE は即時共感応答のみ、SUMMARIZE / CHAT は作業指示・雑談のため構造分析不要
         # 構造分析タスクを非同期でキック（Layer 2）
         try:
             analyze_log_structure.delay(str(log.id))
@@ -277,6 +285,7 @@ async def create_log(
         content=log.content,
         conversation_reply=conversation_reply,
         research_log_id=str(log.id) if log.intent == LogIntent.DEEP_RESEARCH else None,
+        semantic_intent=_semantic_intent,
     )
 
 

@@ -8,6 +8,7 @@ Private RAG: ドキュメント管理API
 """
 import logging
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from sqlalchemy import select, func, desc
@@ -43,6 +44,7 @@ ALLOWED_CONTENT_TYPES = {
 @router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...),
+    thread_id: Optional[str] = Query(None, description="完了通知ログを紐付けるチャットスレッドID"),
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -51,6 +53,7 @@ async def upload_document(
 
     - MinIOに原本を保存
     - Celeryタスクでテキスト抽出→チャンク分割→Embedding→Qdrant格納
+    - thread_id が指定された場合、完了通知 RawLog にそのスレッドIDを付与する
     """
     # ファイル形式の検証
     if file.content_type not in ALLOWED_CONTENT_TYPES:
@@ -103,7 +106,7 @@ async def upload_document(
 
     # 非同期で PDF 処理タスクをキック
     try:
-        process_document_task.delay(str(doc.id))
+        process_document_task.delay(str(doc.id), thread_id=thread_id)
     except Exception as e:
         logger.error(f"Failed to queue document processing task: {e}")
         doc.status = DocumentStatus.ERROR.value
