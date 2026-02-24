@@ -18,6 +18,7 @@ from app.core.llm import llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
 from app.models.raw_log import RawLog
 from app.services.layer3.knowledge_store import knowledge_store
+from app.services.layer1.private_rag import private_rag
 
 if TYPE_CHECKING:
     from app.services.layer1.situation_router import SituationResult
@@ -87,6 +88,12 @@ _TALK_SYSTEM_PROMPT = """\
   押し付けず、会話の中で自然に共有する。具体的な内容（解決策やポイント）を含めること。
 - 関連度が低い場合や会話の流れに合わない場合は無理に言及しない。
 - 「誰が」とは言わない（匿名）。
+
+## ユーザーのドキュメント（Private RAG）が提供された場合
+- システムメッセージに【あなたのドキュメント】セクションが含まれることがある。
+- ユーザーがアップロードしたPDF資料から検索された関連テキストである。
+- 回答の根拠として積極的に活用し、「お手持ちの資料によると〜」のように自然に言及する。
+- 情報が直接的に関連しない場合は無理に言及しない。
 
 ## 文体
 です・ます調。知的で親しみやすく、対等な立場で。"""
@@ -166,6 +173,12 @@ _DO_SYSTEM_PROMPT = """\
 - 関連度が低い場合は無理に言及しない。
 - 「誰が」とは言わない（匿名）。
 
+## ユーザーのドキュメント（Private RAG）が提供された場合
+- システムメッセージに【あなたのドキュメント】セクションが含まれることがある。
+- ユーザーがアップロードしたPDF資料から検索された関連テキストである。
+- 手順やコード例に具体的に組み込み、「資料にあった〜を踏まえると」のように根拠として使う。
+- 情報が直接的に関連しない場合は無理に言及しない。
+
 ## 文体
 です・ます調。簡潔で的確。余計な前置き・感想は最小限に。"""
 
@@ -217,9 +230,15 @@ class ConversationAgent:
         # ── Layer 3: みんなの知恵を検索 ──
         related_insights = await self._search_collective_wisdom(new_log.content)
 
+        # ── Private RAG: ユーザーのドキュメントを検索 ──
+        private_rag_context = await self._search_private_documents(
+            str(user_id), new_log.content
+        )
+
         messages = self._build_messages(
             new_log.content, history, situation,
             related_insights=related_insights,
+            private_rag_context=private_rag_context,
         )
 
         try:
@@ -309,6 +328,7 @@ class ConversationAgent:
         history: List[Tuple[str, Optional[str]]],
         situation: Optional["SituationResult"] = None,
         related_insights: Optional[List[Dict]] = None,
+        private_rag_context: Optional[str] = None,
     ) -> List[dict]:
         """
         LLM に送るメッセージ配列を構築する。
@@ -321,6 +341,9 @@ class ConversationAgent:
 
         Layer 3 連携: related_insights が渡された場合、
         「みんなの知恵」としてシステムプロンプトに注入する。
+
+        Private RAG: ユーザーのアップロードドキュメントから検索した
+        関連チャンクをシステムプロンプトに注入する。
         """
         # ── Do / Talk モード切り替え ──
         is_do = situation.do_mode if situation else False
@@ -350,6 +373,10 @@ class ConversationAgent:
             wisdom_text = self._format_collective_wisdom(related_insights)
             if wisdom_text:
                 system_prompt += f"\n\n{wisdom_text}"
+
+        # ── Private RAG: ユーザーのドキュメントを注入 ──
+        if private_rag_context:
+            system_prompt += f"\n\n{private_rag_context}"
 
         messages: List[dict] = [{"role": "system", "content": system_prompt}]
 
@@ -449,6 +476,59 @@ class ConversationAgent:
                 f"前回の会話内容を踏まえて、まだ掘り下げていない角度から話を広げてください。"
             )
         return None
+
+    # ════════════════════════════════════════
+    # Private RAG: ユーザーのアップロードドキュメント
+    # ════════════════════════════════════════
+
+    async def _search_private_documents(
+        self,
+        user_id: str,
+        user_content: str,
+        limit: int = 3,
+        score_threshold: float = 0.50,
+    ) -> Optional[str]:
+        """
+        ユーザーのアップロードドキュメントから関連チャンクを検索し、
+        システムプロンプトに注入するテキストを返す。
+        """
+        if len(user_content.strip()) < 10:
+            return None
+
+        try:
+            results = await private_rag.search(
+                query=user_content,
+                user_id=user_id,
+                limit=limit,
+                score_threshold=score_threshold,
+            )
+            if not results:
+                return None
+
+            lines = [
+                "【あなたのドキュメント — アップロードされた資料からの関連情報】",
+                "以下はユーザーがアップロードしたPDFドキュメントから検索された関連テキストです。",
+                "回答の根拠として活用してください。情報が回答に関連する場合、",
+                "「お手持ちの資料によると〜」のように自然に言及してください。\n",
+            ]
+            for i, r in enumerate(results, 1):
+                filename = r.get("filename", "（不明）")
+                text = r.get("text", "")
+                score = round(r.get("score", 0) * 100)
+                if len(text) > 400:
+                    text = text[:400] + "…"
+                lines.append(f"  {i}. 『{filename}』（関連度 {score}%）")
+                lines.append(f"     {text}")
+                lines.append("")
+
+            logger.info(
+                "Private RAG: found %d chunks for: %.30s...",
+                len(results), user_content,
+            )
+            return "\n".join(lines)
+        except Exception as e:
+            logger.debug("Private RAG search failed (non-critical): %s", e)
+            return None
 
     # ════════════════════════════════════════
     # Layer 3 連携: みんなの知恵

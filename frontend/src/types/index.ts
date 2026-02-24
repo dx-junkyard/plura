@@ -212,3 +212,61 @@ export interface ProjectCreateRequest {
   topics: string[];
   reason?: string;
 }
+
+// =============================================================================
+// Documents (Private RAG)
+// =============================================================================
+
+/** ドキュメント処理状態 */
+export type DocumentStatus = 'uploading' | 'processing' | 'ready' | 'error';
+
+/** ドキュメント (Backend: DocumentResponse) */
+export interface DocumentResponse {
+  id: string;
+  user_id: string;
+  project_id: string | null;
+  filename: string;
+  content_type: string;
+  file_size: number;
+  status: DocumentStatus;
+  page_count: number | null;
+  chunk_count: number | null;
+  error_message: string | null;
+  topics: string[] | null;
+  summary: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** ドキュメント一覧レスポンス */
+export interface DocumentListResponse {
+  items: DocumentResponse[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+/** アップロード成功レスポンス */
+export interface DocumentUploadResponse {
+  id: string;
+  filename: string;
+  file_size: number;
+  status: DocumentStatus;
+  message: string;
+}
+
+/** Private RAG 検索結果 */
+export interface PrivateRAGSearchResult {
+  document_id: string;
+  filename: string;
+  chunk_index: number;
+  text: string;
+  score: number;
+}
+
+/** Private RAG 検索レスポンス */
+export interface PrivateRAGSearchResponse {
+  query: string;
+  results: PrivateRAGSearchResult[];
+  total: number;
+}

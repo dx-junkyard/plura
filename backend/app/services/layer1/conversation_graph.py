@@ -37,6 +37,7 @@ from app.services.layer1.nodes import (
     run_state_node,
     run_deep_research_node,
     run_research_proposal_node,
+    run_summarize_node,
 )
 
 logger = get_traced_logger("Graph")
@@ -176,6 +177,7 @@ _ALTERNATIVE_HINTS = {
     "deep_dive": "もし具体的な課題の整理や解決策の相談をしたい場合は、そのようにおっしゃってくださいね。",
     "brainstorm": "もしこれを起点にアイデアを広げたい場合は、一緒にブレストしましょう。",
     "state_share": "体調やコンディションを記録したい場合は、そのままお伝えくださいね。",
+    "summarize": "アップロードした資料を要約したい場合は「要約して」とお伝えください。",
 }
 
 
@@ -365,6 +367,12 @@ async def state_share_node(state: AgentState) -> AgentState:
     return {"response": result["response"]}
 
 
+async def summarize_node(state: AgentState) -> AgentState:
+    """Summarize Node ラッパー（ドキュメント要約）"""
+    result = await _traced_node_wrapper("SummarizeNode", run_summarize_node, state)
+    return {"response": result["response"]}
+
+
 async def research_proposal_node(state: AgentState) -> AgentState:
     """Research Proposal Node ラッパー（調査計画書を生成）"""
     result = await _traced_node_wrapper(
@@ -532,7 +540,7 @@ def decide_next_node(state: AgentState) -> str:
         return "research_proposal"
 
     intent = state.get("intent", "chat")
-    valid_intents = {"chat", "empathy", "knowledge", "deep_dive", "brainstorm", "probe", "state_share"}
+    valid_intents = {"chat", "empathy", "knowledge", "deep_dive", "brainstorm", "probe", "state_share", "summarize"}
     if intent not in valid_intents:
         logger.warning(
             "Transitioning to fallback node",
@@ -557,6 +565,7 @@ def build_app_graph() -> StateGraph:
     workflow.add_node("deep_dive", deep_dive_node)
     workflow.add_node("brainstorm", brainstorm_node)
     workflow.add_node("state_share", state_share_node)
+    workflow.add_node("summarize", summarize_node)
     workflow.add_node("probe", probe_node)
     workflow.add_node("research_proposal", research_proposal_node)
     workflow.add_node("deep_research", deep_research_node)
@@ -576,6 +585,7 @@ def build_app_graph() -> StateGraph:
             "deep_dive": "deep_dive",
             "brainstorm": "brainstorm",
             "state_share": "state_share",
+            "summarize": "summarize",
             "probe": "probe",
             "research_proposal": "research_proposal",
             "deep_research": "deep_research",
@@ -589,6 +599,7 @@ def build_app_graph() -> StateGraph:
     workflow.add_edge("deep_dive", END)
     workflow.add_edge("brainstorm", END)
     workflow.add_edge("state_share", END)
+    workflow.add_edge("summarize", END)
     workflow.add_edge("probe", END)
     workflow.add_edge("research_proposal", END)
     workflow.add_edge("deep_research", END)

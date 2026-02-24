@@ -23,6 +23,7 @@ class ConversationIntent(str, Enum):
     BRAINSTORM = "brainstorm"  # 発想・アイデア出し
     PROBE = "probe"            # 意図確認・仮説検証モード
     STATE_SHARE = "state_share"  # コンディション・状態記録
+    SUMMARIZE = "summarize"    # ドキュメント要約
 
 
 class PreviousEvaluation(str, Enum):
@@ -161,5 +162,9 @@ INTENT_DISPLAY_MAP = {
     ConversationIntent.STATE_SHARE: {
         "label": "コンディション記録",
         "icon": "battery_charging_full",
+    },
+    ConversationIntent.SUMMARIZE: {
+        "label": "要約モード",
+        "icon": "summarize",
     },
 }

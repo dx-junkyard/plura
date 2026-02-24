@@ -77,19 +77,59 @@ celery -A app.workers.celery_app worker --loglevel=info -Q layer1,layer2,celery
 
 ---
 
-## データの流れ（3層アーキテクチャ）
 
-1. **Layer 1（思考の私有地）**  
-   ログ作成 or 音声文字起こし → **Context Analyzer**（感情・トピック・インテント）  
-   → 非同期で **Structural Analyzer**（文脈・仮説更新）と **精製所** をキュー
+## 🏗️ システムアーキテクチャ（3-Layer Architecture）
 
-2. **Layer 2（精製所）**  
-   Celery タスク `process_log_for_insight`:  
-   **Privacy Sanitizer** → **Insight Distiller** → **Sharing Broker** → **InsightCard** 作成  
-   共有価値が高いと `PENDING_APPROVAL`、そうでなければ `DRAFT`。
+PLURAのバックエンドは、「自分だけのノートからみんなの知恵袋へ」というビジョンを実現するため、データと処理の公開度・抽象度に応じた3つのレイヤーに厳密に分割されています。
 
-3. **Layer 3（共創の広場）**  
-   **Knowledge Store**（Qdrant）、**Serendipity Matcher**（リアルタイム推奨）。
+### 1. Layer 1: 思考の私有地 (Private & Conversational)
+* **役割:** ユーザーがAIを壁打ち相手（Second Brain）として活用し、個人的な思考や迷いを安全に記録する層。
+* **主な処理 (`app/services/layer1/`):**
+    * ユーザーの意図判定（IntentRouter）、各種Nodeによる対話エージェント。
+* **制約:** このレイヤーのデータ（Raw Logs）は原則として他者には公開されません。
+
+### 2. Layer 2: 情報の関所 (Gateway & Distillation)
+* **役割:** Layer 1の私的なログから「組織にとって価値のあるインサイト」を抽出し、プライバシーを保護した上で共有可能な形に変換する層。
+* **主な処理 (`app/services/layer2/`):**
+    * Celery タスク `process_log_for_insight` による非同期パイプライン:  
+      **Privacy Sanitizer** → **Insight Distiller** → **Sharing Broker** → **InsightCard** 作成
+    * 共有価値が高いと `PENDING_APPROVAL`、そうでなければ `DRAFT` となります。
+
+### 3. Layer 3: 組織のタペストリー化 (Public & Organizational)
+* **役割:** 抽出された個人の知恵を組み合わせ、組織全体の動的なアクションやルールへと昇華させる層。
+* **主な処理 (`app/services/layer3/`):**
+    * **Knowledge Store** (Qdrant): 共有知のベクトル保存。
+    * **Serendipity Matcher**: リアルタイムな動的チーム（Flash Team）の推奨。
+    * **Policy Weaver (新規追加)**: チーム解散時のログから現場の「ジレンマと決断」を抽出し、次のチームが再利用可能なルール（Governance as Code）として制度化する。
+
+
+---
+
+## ⚙️ 非同期処理とタスクキュー設計 (Celery)
+
+PLURAでは、LLMを活用した重い推論タスクが頻発します。ユーザーのリアルタイムなチャット体験（Layer 1）を損なわないため、Celeryのタスクは**処理の重さに応じて2つのキューに厳密に分離**されています。
+
+* **`fast_queue` (高速処理用):**
+    * **用途:** 数秒〜十数秒で完了するタスク（チャットのリアルタイム応答、単発ログのメタデータ付与、即時マッチング提案など）。
+    * **実装例:** `@celery_app.task(queue='fast_queue')`
+* **`heavy_queue` (重負荷・バッチ処理用):**
+    * **用途:** 数分以上の時間がかかる、バックグラウンドでの大規模なLLM推論タスク。
+    * **該当タスク:** **Policy Weaver**による過去ログの読み込みとジレンマ抽出、バックテストシミュレーション、Deep Researchなど。
+    * **実装例:** `@celery_app.task(queue='heavy_queue')`
+
+
+---
+
+## 🧠 Policy Weaver 実装におけるコア・フィロソフィー
+
+Layer 3の中核機能である `Policy Weaver` を開発する際は、以下の「PLURA独自のガバナンス思想」を必ず遵守してください。
+
+1.  **Heuristic First (二段階制度化):**
+    いきなりシステムを強制的にブロックする Strict Policy を作らない。まずはAI Agentのシステムプロンプトとして機能する `Prompt as Code`（強制力: `Suggest` または `Warn`）として実装する。
+2.  **TTL Driven (ワクチンのような新陳代謝):**
+    「永遠に続くルール」は組織の硬直化を招く。すべてのPolicyには必ず `ttl_expires_at` (例: 30日後) を設け、定期的に再評価する。
+3.  **Override as Fuel (逸脱を歓迎する):**
+    ユーザーがルールを無視（Override）することはエラーではなく、「ルールの限界を教えてくれる貴重なフィードバック」である。Override理由を収集し、自動で境界条件をアップデートするループを回すこと。
 
 ---
 

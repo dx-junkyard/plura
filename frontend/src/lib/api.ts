@@ -18,6 +18,9 @@ import type {
   ProjectResponse,
   ProjectListItem,
   ProjectCreateRequest,
+  DocumentUploadResponse,
+  DocumentListResponse,
+  DocumentResponse,
 } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1';
@@ -276,6 +279,52 @@ class ApiClient {
     await this.client.patch(`/projects/${projectId}/status`, null, {
       params: { new_status: newStatus },
     });
+  }
+
+  // Documents (Private RAG)
+  async uploadDocument(file: File, threadId?: string | null): Promise<DocumentUploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const params: Record<string, string> = {};
+    if (threadId) {
+      params.thread_id = threadId;
+    }
+    const { data } = await this.client.post<DocumentUploadResponse>(
+      '/documents/upload',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' }, params },
+    );
+    return data;
+  }
+
+  async listDocuments(page: number = 1, pageSize: number = 20): Promise<DocumentListResponse> {
+    const { data } = await this.client.get<DocumentListResponse>('/documents/', {
+      params: { page, page_size: pageSize },
+    });
+    return data;
+  }
+
+  async getDocument(documentId: string): Promise<DocumentResponse> {
+    const { data } = await this.client.get<DocumentResponse>(`/documents/${documentId}`);
+    return data;
+  }
+
+  async deleteDocument(documentId: string): Promise<void> {
+    await this.client.delete(`/documents/${documentId}`);
+  }
+
+  async getDocumentPresignedUrl(documentId: string): Promise<{ url: string; expires_in_seconds: number }> {
+    const { data } = await this.client.get<{ url: string; expires_in_seconds: number }>(
+      `/documents/${documentId}/presigned-url`,
+    );
+    return data;
+  }
+
+  async getDocumentStatus(documentId: string): Promise<{ id: string; filename: string; status: string; message: string }> {
+    const { data } = await this.client.get<{ id: string; filename: string; status: string; message: string }>(
+      `/documents/${documentId}/status`,
+    );
+    return data;
   }
 }
 

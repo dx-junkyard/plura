@@ -23,6 +23,7 @@ _SYSTEM_PROMPT = """あなたはPLURAのナレッジアシスタントです。
 - 確信がない場合は「〜と考えられています」等の表現を使う
 - 専門用語は噛み砕いて説明する
 - 日本語で応答する
+- 「参考ドキュメント」セクションが提供されている場合、その情報を優先的に活用する
 """
 
 _DEEP_RESEARCH_PROMPT = """以下のユーザーの質問について、詳細な調査（論文検索、データ収集等）が必要かどうかを判定してください。
@@ -65,13 +66,39 @@ async def _check_requires_deep_research(
         return False
 
 
+async def _retrieve_private_rag_context(user_id: str, query: str) -> str:
+    """Private RAG からユーザーのドキュメントを検索し、コンテキストを構築"""
+    try:
+        from app.services.layer1.private_rag import private_rag
+
+        results = await private_rag.search(
+            query=query,
+            user_id=user_id,
+            limit=3,
+            score_threshold=0.5,
+        )
+        if not results:
+            return ""
+
+        context_parts = ["【参考ドキュメント】"]
+        for r in results:
+            context_parts.append(
+                f"({r['filename']}) {r['text'][:400]}"
+            )
+        return "\n".join(context_parts)
+    except Exception as e:
+        logger.warning("Private RAG search failed", metadata={"error": str(e)})
+        return ""
+
+
 async def run_knowledge_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    知識ノード: 即時回答 + 非同期調査トリガー
+    知識ノード: Private RAG検索 + 即時回答 + 非同期調査トリガー
 
-    1. LLMで即座に回答を生成
-    2. 深掘り調査が必要かを判定
-    3. 必要であればCeleryタスクをキックし、background_taskをstateに設定
+    1. Private RAG でユーザーのドキュメントから関連情報を検索
+    2. LLMで即座に回答を生成（RAG コンテキスト付き）
+    3. 深掘り調査が必要かを判定
+    4. 必要であればCeleryタスクをキックし、background_taskをstateに設定
     """
     input_text = state["input_text"]
     user_id = state.get("user_id", "")
@@ -86,12 +113,20 @@ async def run_knowledge_node(state: Dict[str, Any]) -> Dict[str, Any]:
     try:
         await provider.initialize()
 
-        # A. 即時回答の生成
+        # Private RAG コンテキスト取得
+        rag_context = await _retrieve_private_rag_context(user_id, input_text)
+
+        # A. 即時回答の生成（RAGコンテキスト付き）
+        user_message = input_text
+        if rag_context:
+            user_message = f"{input_text}\n\n{rag_context}"
+            logger.info("Private RAG context found", metadata={"context_length": len(rag_context)})
+
         logger.info("LLM request (quick answer)", metadata={"prompt_preview": input_text[:100]})
         answer_result = await provider.generate_text(
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": input_text},
+                {"role": "user", "content": user_message},
             ],
             temperature=0.3,
         )

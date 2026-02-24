@@ -98,6 +98,21 @@ export interface ChatMessage {
 export function rawLogToMessages(log: RawLog): ChatMessage[] {
   const msgs: ChatMessage[] = [];
 
+  // system_notification: バックエンドからの通知メッセージ（ドキュメント処理完了など）
+  // ユーザー発言は表示せず、assistant_reply のみをアシスタントメッセージとして表示する
+  if (log.content_type === 'system_notification') {
+    if (log.assistant_reply) {
+      msgs.push({
+        id: `sysnotif-${log.id}`,
+        type: 'assistant',
+        content: log.assistant_reply,
+        timestamp: log.created_at,
+        logId: log.id,
+      });
+    }
+    return msgs;
+  }
+
   const drMeta = log.metadata_analysis?.deep_research;
   const isDeepResearchComplete = drMeta != null && (drMeta.summary || drMeta.details);
 
