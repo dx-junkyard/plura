@@ -139,9 +139,11 @@ async def create_log(
         pass
 
     # Deep Research の場合、バックグラウンドタスクをキックして即時応答を返す
+    # ただし SemanticRouter が "summarize" を検出済みの場合は要約処理を優先する
+    # （context_analyzer に SUMMARIZE インテントがないため DEEP_RESEARCH に誤分類される場合への対策）
     conversation_reply = None
 
-    if log.intent == LogIntent.DEEP_RESEARCH:
+    if log.intent == LogIntent.DEEP_RESEARCH and _semantic_intent != "summarize":
         try:
             run_deep_research_task.delay(
                 user_id=str(current_user.id),

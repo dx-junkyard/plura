@@ -308,13 +308,15 @@ class StructuralAnalyzer:
 
 ## Step 0: インタラクション判定
 今回の入力が以下のどれに当たるか判断してください（複数可だが主要なものを1つ選ぶ）:
-- QUESTION: 具体的な情報ややり方を尋ねている
+- QUESTION: 具体的な情報ややり方を尋ねている（ただし、ドキュメントの要約やファイル操作を求められた場合は TASK_REQUEST として扱うこと）
+- TASK_REQUEST: AIに対するタスク・作業の依頼（例：「要約して」「まとめて」「翻訳して」「ファイルを分析して」「データを整理して」など、具体的な作業の実行を求めている）
 - BRAINSTORM: アイデア出し・検討・選択肢を探している
 - REFLECTION: 思考整理・振り返り・自分の考えを深めたい
 - CONTINUATION: 「じゃあ続きから」「続きで」「続きお願い」など、前の話題の続きを希望するだけの短い発話（新しいテーマを述べていない）
 - COLLABORATIVE: 「困っていない」「一緒に考察しよう」「一緒に考えよう」など、問題枠を否定し前の話題を一緒に考えたい発話（新しいテーマの提示ではない）
 - OTHER: 上記以外
 
+**TASK_REQUEST の場合**: AIはここでタスクを実行しない。ユーザーのタスクの目的や背景を深掘りする問いを probing_question として生成する。例：「この要約はどのような場面で活用されますか？」「資料の中で特に重視したい観点はありますか？」「どの程度の粒度でまとめると使いやすいですか？」など。updated_structural_issue にはタスクのテーマ（例：「ドキュメントの要約」）を簡潔に設定する。「ファイルが見られません」「対応できません」のような謝罪文は絶対に出力しないこと。
 **CONTINUATION の場合**: updated_structural_issue は直前の仮説をそのまま返す。probing_question はその話題の続きについての問いにすること。入力文を課題にしない。
 **COLLABORATIVE の場合**: updated_structural_issue は直前の仮説をそのまま返す。ユーザー発言を構造的課題にしない。probing_question は前のテーマで協働を促す問いにする。
 **訂正・補足（「〇〇は関係ない」「違う」）の場合**: updated_structural_issue は直前の仮説のまま。ユーザー発言を課題にしない。直前の問いを繰り返さず、別の切り口で probing_question を作る（例: 「人物は関係ない」→ 登場人物を聞かず「テーマや状況の観点から、どこから深めますか？」）。
@@ -379,7 +381,7 @@ class StructuralAnalyzer:
     "relationship_type": "ADDITIVE" | "PARALLEL" | "CORRECTION" | "NEW",
     "relationship_reason": "判定理由の説明",
     "updated_structural_issue": "更新された構造的課題の定義",
-    "probing_question": "QUESTIONの場合はできる限り具体的な回答、もしくは3つ以内の調査手順。その他の場合は感情方向性に適した問い。"
+    "probing_question": "TASK_REQUESTの場合はタスクの目的・背景を深掘りする問い。QUESTIONの場合はできる限り具体的な回答、もしくは3つ以内の調査手順（ただしドキュメントの要約やファイル操作を求められた場合はQUESTIONではなくTASK_REQUESTとして扱い、活用目的を問うこと）。その他の場合は感情方向性に適した問い。"
 }
 
 重要: 「問い」を作る際は次を守ってください。
@@ -391,7 +393,8 @@ class StructuralAnalyzer:
 - 指示語だけにせず、何についての問い/回答かを明示する。
 - 共感的で圧迫感のないトーンにする。
 - ユーザーがポジティブなのに問題を探さない。ネガティブなのに無理に明るくしない。
-- QUESTIONの場合: まず簡潔に答えられる範囲で答える。確信が持てないときは「今すぐできる調べ方」を2〜3個、具体的キーワード付きで提案する。
+- TASK_REQUESTの場合: タスクを実行せず、タスクの活用目的・背景・重視する観点を問う。「ファイルが見られません」「対応できません」等の謝罪は絶対に出力しない。
+- QUESTIONの場合: まず簡潔に答えられる範囲で答える。確信が持てないときは「今すぐできる調べ方」を2〜3個、具体的キーワード付きで提案する。ただし、ドキュメントの要約・ファイル操作・翻訳など作業実行を求められた場合はTASK_REQUESTと同様に活用目的を問うこと。
 - BRAINSTORM/REFLECTIONの場合: 新しい洞察が出るように理由・背景・具体的状況を尋ねる。
 """
 
@@ -445,6 +448,17 @@ class StructuralAnalyzer:
             "updated_structural_issue": issue,
             "probing_question": probing,
         }
+
+    # タスク依頼キーワード（要約・翻訳・ファイル操作など）
+    _TASK_REQUEST_KEYWORDS = [
+        "要約", "まとめて", "サマリー", "概要", "翻訳", "変換",
+        "分析して", "整理して", "ファイル", "ドキュメント",
+        "データを", "CSV", "PDF", "資料を",
+    ]
+
+    def _is_task_request(self, text: str) -> bool:
+        """タスク・作業依頼かどうかを簡易判定"""
+        return any(kw in text for kw in self._TASK_REQUEST_KEYWORDS)
 
     def _is_question(self, text: str) -> bool:
         """簡易的に質問かどうかを判定"""
@@ -501,6 +515,16 @@ class StructuralAnalyzer:
                 "relationship_reason": "訂正・補足のため前の話題を維持し、問いの角度を変える",
                 "updated_structural_issue": previous_hypothesis,
                 "probing_question": f"では「{previous_hypothesis}」について、テーマや状況の観点から、どこから深めますか？",
+            }
+
+        # タスク依頼（要約・翻訳・ファイル操作等）→ 目的・背景を深掘りする問いを返す
+        if self._is_task_request(current_log):
+            simple_issue = self._extract_simple_issue(current_log)
+            return {
+                "relationship_type": RelationshipType.NEW.value,
+                "relationship_reason": "タスク依頼のため、目的・背景を深掘りする問いを生成",
+                "updated_structural_issue": simple_issue,
+                "probing_question": f"「{simple_issue}」について、この作業はどのような場面で活用されますか？特に重視したい観点があれば教えてください。",
             }
 
         is_q = self._is_question(current_log)
