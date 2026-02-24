@@ -12,7 +12,7 @@ Private RAG: PDF処理パイプライン（Celery タスク）
 import asyncio
 import logging
 import uuid
-from typing import Tuple
+from typing import Optional, Tuple
 
 from sqlalchemy import select
 
@@ -60,14 +60,14 @@ def _extract_pdf_text(pdf_bytes: bytes) -> Tuple[str, int]:
 
 
 @celery_app.task(bind=True, max_retries=2)
-def process_document_task(self, document_id: str):
+def process_document_task(self, document_id: str, thread_id: Optional[str] = None):
     """
     PDF処理パイプライン
 
     1. MinIO から PDF をダウンロード
     2. テキスト抽出（PyMuPDF）
     3. チャンク分割 → Embedding → Qdrant 格納
-    4. Document ステータスを READY に更新
+    4. Document ステータスを READY に更新 + 完了通知 RawLog を同一トランザクションで追加
     """
     async def _process():
         await engine.dispose()
@@ -116,38 +116,35 @@ def process_document_task(self, document_id: str):
                     chunks=chunks,
                 )
 
-                # Step 4: ステータスを READY に更新
+                # Step 4: ステータスを READY に更新 + 完了通知 RawLog を追加
+                # 同一トランザクションでコミットすることで、フロントエンドが
+                # READY ステータスを検知した時点で必ず完了ログが存在することを保証する
                 doc.chunk_count = stored_count
                 doc.status = DocumentStatus.READY.value
+
+                log_thread_id = uuid.UUID(thread_id) if thread_id else None
+                completion_log = RawLog(
+                    user_id=doc.user_id,
+                    thread_id=log_thread_id,
+                    content="[doc_ready]",
+                    content_type="system_notification",
+                    assistant_reply=(
+                        f"📄 ドキュメント「{doc.filename}」の読み込みが完了しました！"
+                        "「要約して」と指示したり、内容について質問してみてください。"
+                    ),
+                    intent=LogIntent.LOG,
+                    is_analyzed=True,
+                    is_processed_for_insight=True,
+                    is_structure_analyzed=True,
+                )
+                session.add(completion_log)
                 await session.commit()
 
                 logger.info(
                     f"Document processing complete: {document_id}, "
                     f"pages={page_count}, chunks={stored_count}/{len(chunks)}"
                 )
-
-                # Step 5: 完了通知を RawLog に追加（エージェントからの報告として表示）
-                try:
-                    completion_log = RawLog(
-                        user_id=doc.user_id,
-                        content="[doc_ready]",
-                        content_type="system_notification",
-                        assistant_reply=(
-                            f"📄 ドキュメント「{doc.filename}」の読み込みが完了しました！"
-                            "「要約して」と指示したり、内容について質問してみてください。"
-                        ),
-                        intent=LogIntent.LOG,
-                        is_analyzed=True,
-                        is_processed_for_insight=True,
-                        is_structure_analyzed=True,
-                    )
-                    session.add(completion_log)
-                    await session.commit()
-                    logger.info(f"Completion notification logged for document: {document_id}")
-                except Exception as log_err:
-                    logger.warning(
-                        f"Failed to write completion log for document {document_id}: {log_err}"
-                    )
+                logger.info(f"Completion notification logged for document: {document_id}")
 
                 return {
                     "status": "success",

@@ -282,13 +282,17 @@ class ApiClient {
   }
 
   // Documents (Private RAG)
-  async uploadDocument(file: File): Promise<DocumentUploadResponse> {
+  async uploadDocument(file: File, threadId?: string | null): Promise<DocumentUploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
+    const params: Record<string, string> = {};
+    if (threadId) {
+      params.thread_id = threadId;
+    }
     const { data } = await this.client.post<DocumentUploadResponse>(
       '/documents/upload',
       formData,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
+      { headers: { 'Content-Type': 'multipart/form-data' }, params },
     );
     return data;
   }
