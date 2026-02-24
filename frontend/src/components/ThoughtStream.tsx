@@ -9,6 +9,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Send, Mic, MicOff, Loader2, ChevronDown, ChevronUp, Copy, Check, Lightbulb, MessageSquarePlus, Search, ThumbsUp, ThumbsDown, FileText, ExternalLink, Paperclip, X, FileUp } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useRecommendationStore, useConversationStore, rawLogToMessages } from '@/lib/store';
@@ -562,7 +563,7 @@ PLURA で思考を整理しました`;
     };
   }, [researchLogId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // PDF処理完了ポーリング: status が ready になったらトースト通知
+  // PDF処理完了ポーリング: status が ready になったらトースト通知＋チャットログ再取得
   useEffect(() => {
     if (!pollingDocumentId) return;
 
@@ -575,16 +576,38 @@ PLURA で思考を整理しました`;
         const docStatus = await api.getDocumentStatus(pollingDocumentId);
 
         if (docStatus.status === 'ready') {
-          const completionMsg: ChatMessage = {
-            id: `doc-ready-${pollingDocumentId}`,
-            type: 'system',
-            content: `「${filename || docStatus.filename}」のPDF学習が完了しました。会話の中でドキュメントの内容を参照できます。`,
-            timestamp: new Date().toISOString(),
-          };
-          addMessage(completionMsg);
           clearInterval(documentPollingRef.current);
           setPollingDocumentId(null);
           setPollingDocumentFilename(null);
+
+          // Toast 通知を表示
+          toast.success('ドキュメントの学習が完了しました！', {
+            description: `「${filename || docStatus.filename}」の内容を参照できます。`,
+            duration: 5000,
+          });
+
+          // バックエンドが追加した完了 RawLog を取得して会話に反映
+          try {
+            const logsData = await api.getLogs(1, 5);
+            const currentMsgIds = new Set(
+              useConversationStore.getState().messages
+                .filter((m) => m.logId)
+                .map((m) => m.logId as string)
+            );
+            const newLogs = logsData.items.filter((log) => !currentMsgIds.has(log.id));
+            if (newLogs.length > 0) {
+              const sorted = [...newLogs].sort(
+                (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+              );
+              const newMessages: ChatMessage[] = [];
+              for (const log of sorted) {
+                newMessages.push(...rawLogToMessages(log));
+              }
+              newMessages.forEach((m) => addMessage(m));
+            }
+          } catch {
+            // ログ再取得に失敗してもポーリング停止・Toast表示は既に完了しているため無視
+          }
         } else if (docStatus.status === 'error') {
           const errorMsg: ChatMessage = {
             id: `doc-error-${pollingDocumentId}`,
