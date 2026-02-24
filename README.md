@@ -38,7 +38,7 @@ PLURAはこの最後の問題、
 ┌─────────────────────────────────────────────────────────────┐
 │                Layer 3: Public Plaza                         │
 │                  (共創の広場)                                │
-│   Knowledge Graph / Serendipity / Team-Up Engine            │
+│   Knowledge Store / Serendipity Matcher / Policy Weaver      │
 ├─────────────────────────────────────────────────────────────┤
 │                Layer 2: Gateway Refinery                     │
 │                  (情報の関所)                                │
@@ -46,7 +46,7 @@ PLURAはこの最後の問題、
 ├─────────────────────────────────────────────────────────────┤
 │                Layer 1: Private Safehouse                    │
 │                  (思考の私有地)                              │
-│   ThoughtStream (Input UI) / Context Analyzer               │
+│   ConversationGraph (LangGraph) / Private RAG / IntentRouter │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -69,9 +69,13 @@ PLURAは
 
 ### Layer 1: Private Safehouse（思考の私有地）
 
-* **ThoughtStream**: チャット形式の入力UI
-* **Context Analyzer**: 感情・トピック・インテントの自動解析 `[FAST モデル]`
-* ノン・ジャッジメンタル応答（受容的な相槌のみ）
+* **ThoughtStream**: チャット形式の入力UI（タイムライン・スレッド管理）
+* **ConversationGraph**: LangGraph ベースの仮説駆動型ルーティング
+* **IntentRouter**: 発話意図を分類（Semantic Router 統合） `[FAST モデル]`
+* **SituationRouter**: 発話コンテキスト分類（続き / 話題切り替え 等）
+* **ContextAnalyzer**: 感情・トピック・インテントの自動解析 `[FAST モデル]`
+* **PrivateRAG**: アップロードした PDF / ドキュメントからの類似検索
+* **会話ノード（9種）**: empathy / chat / brainstorm / deep\_dive / deep\_research / knowledge / research\_proposal / summarize（Map-Reduce）/ state
 
 > ここでは評価も比較も起きない。
 
@@ -90,10 +94,10 @@ PLURAは
 
 ### Layer 3: Public Plaza（共創の広場）
 
-* **Knowledge Graph Store**: ベクトル検索、意味的類似検索 `[Embeddings]`
-* **Serendipity Matcher**: 入力中のリアルタイム推奨
-* **Interest Overlap Detection**: 関心重複検出
-* **Team-Up Suggestion Engine（予定）**: 小規模チーム自動提案
+* **Knowledge Store**: ベクトル検索、意味的類似検索 `[Embeddings]`
+* **Serendipity Matcher**: 入力中のリアルタイム推奨・関心重複検出
+* **Policy Weaver**: チームログから暗黙知のガバナンスルールを抽出・定着 `[DEEP モデル]`
+* **Team-Up Suggestion Engine（実装中）**: 小規模チーム自動提案
 * **Project Seed Generator（予定）**: 共通課題から企画を自動生成
 
 > 共有はゴールではない。
@@ -120,11 +124,13 @@ PLURAは
 
 ## 技術スタック
 
-* **Frontend**: Next.js 14 (App Router), React, TypeScript, Tailwind CSS
-* **Backend**: FastAPI, Python 3.11, SQLAlchemy
+* **Frontend**: Next.js 14 (App Router), React, TypeScript, Tailwind CSS, Zustand, TanStack Query
+* **Backend**: FastAPI, Python 3.11, SQLAlchemy, LangGraph
 * **Database**: PostgreSQL (RDB), Qdrant (Vector DB)
+* **Object Storage**: MinIO（PDF・ドキュメント保存）
 * **Queue**: Celery, Redis
-* **LLM**: マルチプロバイダー対応（OpenAI / Google Cloud Vertex AI）
+* **Audio**: OpenAI Whisper（音声認識）
+* **LLM**: マルチプロバイダー対応（Google Cloud Vertex AI / OpenAI）
 
 ---
 
@@ -134,24 +140,25 @@ PLURAは用途に応じて最適なLLMプロバイダーとモデルを選択で
 
 | 用途 | 使用箇所 | デフォルトモデル | 特徴 |
 |------|----------|------------------|------|
-| **FAST** | Layer 1 (Context Analyzer) | gpt-5-nano | 低レイテンシ優先、リアルタイム解析 |
-| **BALANCED** | Layer 2 (Privacy Sanitizer, Insight Distiller, Sharing Broker) | gpt-5-mini | バランス重視、標準的な処理 |
-| **DEEP** | Layer 2 (Structural Analyzer) | gpt-5.2 | 品質優先、深い洞察・構造化 |
+| **FAST** | Layer 1 (IntentRouter, ContextAnalyzer) | gemini-2.5-pro (Vertex AI) | 低レイテンシ優先、リアルタイム解析 |
+| **BALANCED** | Layer 2 (Privacy Sanitizer, Insight Distiller, Sharing Broker) | gemini-2.5-flash (Vertex AI) | バランス重視、標準的な処理 |
+| **DEEP** | Layer 2 (Structural Analyzer), Layer 3 (Policy Weaver) | 設定で切り替え可 | 品質優先、深い洞察・構造化 |
 
-プロバイダーは環境変数で柔軟に切り替え可能です（OpenAI ↔ Vertex AI）。
+プロバイダーは環境変数で柔軟に切り替え可能です（Vertex AI ↔ OpenAI）。
 
 ---
 
 ## Embeddingアーキテクチャ
 
-ベクトル検索（Knowledge Store）で使用するEmbeddingもマルチプロバイダー対応です。
+ベクトル検索（Knowledge Store / Private RAG）で使用するEmbeddingもマルチプロバイダー対応です。
 
 | プロバイダー | モデル | 次元数 | 特徴 |
 |-------------|--------|--------|------|
-| **OpenAI** | text-embedding-3-small | 1536 | 推奨、高速 |
-| **OpenAI** | text-embedding-3-large | 3072 | 高精度 |
-| **Vertex AI** | text-embedding-004 | 768 | Google Cloud統合 |
+| **Vertex AI** | text-embedding-004 | 768 | デフォルト推奨、Google Cloud統合 |
+| **Vertex AI** | text-embedding-005 | 768 | 最新版 |
 | **Vertex AI** | text-multilingual-embedding-002 | 768 | 多言語対応 |
+| **OpenAI** | text-embedding-3-small | 1536 | 高速 |
+| **OpenAI** | text-embedding-3-large | 3072 | 高精度 |
 
 ---
 
@@ -160,7 +167,7 @@ PLURAは用途に応じて最適なLLMプロバイダーとモデルを選択で
 ### 前提条件
 
 - Docker & Docker Compose
-- (オプション) OpenAI API Key
+- Google Cloud アカウント（デフォルト：Vertex AI 使用）、または OpenAI API Key
 
 ### クイックスタート
 
@@ -171,10 +178,10 @@ cd plura
 
 # 環境変数の設定
 cp .env.example .env
-# .env ファイルを編集し、OPENAI_API_KEY を設定
+# .env ファイルを編集（LLMプロバイダー設定を参照）
 
 # Docker Compose で起動
-docker-compose up -d
+docker compose up -d
 
 # アプリケーションにアクセス
 # Frontend: http://localhost:3000
@@ -184,25 +191,7 @@ docker-compose up -d
 
 ### LLMプロバイダーの設定
 
-#### OpenAI（デフォルト）
-
-`.env` ファイルに以下を設定：
-
-```bash
-OPENAI_API_KEY=your-openai-api-key
-
-# 用途別モデル設定（JSON形式）
-LLM_CONFIG_FAST='{"provider": "openai", "model": "gpt-5-nano"}'
-LLM_CONFIG_BALANCED='{"provider": "openai", "model": "gpt-5-mini"}'
-LLM_CONFIG_DEEP='{"provider": "openai", "model": "gpt-5.2"}'
-
-# Embedding設定（JSON形式）
-EMBEDDING_CONFIG='{"provider": "openai", "model": "text-embedding-3-small"}'
-```
-
-#### Google Cloud Vertex AI（Gemini）
-
-Vertex AI を使用する場合は、以下の手順で設定してください。
+#### Google Cloud Vertex AI（デフォルト）
 
 **1. Google Cloud プロジェクトの準備**
 
@@ -234,7 +223,7 @@ gcloud config set project YOUR_PROJECT_ID
 # Vertex AI API の有効化
 gcloud services enable aiplatform.googleapis.com
 
-# アプリケーション用の認証ファイル(ADC)を作成（再度URL認証が必要な場合があります）
+# アプリケーション用の認証ファイル(ADC)を作成
 gcloud auth application-default login
 
 # アクセス権付与
@@ -249,15 +238,19 @@ sudo chmod -R 755 .gcp
 # Google Cloud 設定
 GOOGLE_CLOUD_PROJECT=your-gcp-project-id
 
-# 例: BALANCED に Gemini を使用
-LLM_CONFIG_BALANCED='{"provider": "vertex", "model": "gemini-1.5-flash"}'
+# デフォルト設定（省略可）
+LLM_CONFIG_FAST='{"provider": "vertex", "model": "gemini-2.5-pro"}'
+LLM_CONFIG_BALANCED='{"provider": "vertex", "model": "gemini-2.5-flash"}'
 
-# 例: DEEP に Gemini Pro を使用
-LLM_CONFIG_DEEP='{"provider": "vertex", "model": "gemini-1.5-pro"}'
-
-# 例: Vertex AI Embedding を使用
+# Embedding設定（デフォルト: Vertex AI）
 EMBEDDING_CONFIG='{"provider": "vertex", "model": "text-embedding-004"}'
 ```
+
+**利用可能なGeminiモデル（LLM）:**
+- `gemini-2.5-pro` - 高性能、推論重視
+- `gemini-2.5-flash` - 高速、コスト効率重視
+- `gemini-1.5-pro` - 高品質、複雑なタスク向け
+- `gemini-1.5-flash` - 汎用モデル
 
 **3. サービスアカウント認証（本番環境向け）**
 
@@ -279,15 +272,21 @@ gcloud iam service-accounts keys create ./credentials.json \
 export GOOGLE_APPLICATION_CREDENTIALS="./credentials.json"
 ```
 
-**利用可能なGeminiモデル（LLM）:**
-- `gemini-1.5-flash` - 高速、コスト効率重視
-- `gemini-1.5-pro` - 高品質、複雑なタスク向け
-- `gemini-1.0-pro` - 汎用モデル
+#### OpenAI（代替）
 
-**利用可能なVertex AIモデル（Embedding）:**
-- `text-embedding-004` - 推奨、768次元
-- `text-embedding-005` - 最新、768次元
-- `text-multilingual-embedding-002` - 多言語対応、768次元
+`.env` ファイルに以下を設定：
+
+```bash
+OPENAI_API_KEY=your-openai-api-key
+
+# 用途別モデル設定（JSON形式）
+LLM_CONFIG_FAST='{"provider": "openai", "model": "gpt-4o-mini"}'
+LLM_CONFIG_BALANCED='{"provider": "openai", "model": "gpt-4o-mini"}'
+LLM_CONFIG_DEEP='{"provider": "openai", "model": "gpt-4o"}'
+
+# Embedding設定
+EMBEDDING_CONFIG='{"provider": "openai", "model": "text-embedding-3-small"}'
+```
 
 ### ローカル開発（Docker不使用）
 
@@ -299,6 +298,13 @@ python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
+```
+
+Celery Worker（Layer 2 非同期処理）：
+
+```bash
+cd backend && source venv/bin/activate
+celery -A app.workers.celery_app worker --loglevel=info -Q layer1,layer2,celery
 ```
 
 #### Frontend
@@ -382,7 +388,7 @@ GitHub Actions で以下の2段階チェックが走ります。
 
 #### 目的と概要
 
-LLM-as-a-Judge は、各コンポーネントの出力品質を LLM（GPT等）が「裁判官」として 1〜10 点で自動採点するフレームワークです。ルールベースでは計測しにくい「自然さ」「文脈保持率」「抽象化の適切さ」といった定性的な品質を定量化できます。
+LLM-as-a-Judge は、各コンポーネントの出力品質を LLM（Gemini / GPT等）が「裁判官」として 1〜10 点で自動採点するフレームワークです。ルールベースでは計測しにくい「自然さ」「文脈保持率」「抽象化の適切さ」といった定性的な品質を定量化できます。
 
 #### 通常の Push / PR では LLM 評価を実行しない
 
@@ -411,8 +417,8 @@ CI で LLM 評価を実行するには、GitHub リポジトリに API キーを
 
 | Secret 名 | 値 | 必須 |
 |-----------|-----|------|
-| `OPENAI_API_KEY` | OpenAI の API キー（`sk-...` 形式） | OpenAI を使う場合は必須 |
 | `GOOGLE_CLOUD_PROJECT` | GCP プロジェクト ID | Vertex AI を使う場合は必須 |
+| `OPENAI_API_KEY` | OpenAI の API キー（`sk-...` 形式） | OpenAI を使う場合は必須 |
 
 > **注意:** Secrets に登録した値はワークフローのログには表示されません。誤って公開しないよう、`.env` ファイルや直接コードへの記載は避けてください。
 >
@@ -436,7 +442,7 @@ cd backend
 # ルールベース評価のみ（LLM 不要・コストゼロ）
 python -m tests.evaluators.run_evaluation --all
 
-# LLM Judge を使用した本格評価（OPENAI_API_KEY が必要）
+# LLM Judge を使用した本格評価（APIキーが必要）
 python -m tests.evaluators.run_evaluation --all --use-llm
 
 # 特定コンポーネントのみ LLM 評価
@@ -446,7 +452,7 @@ python -m tests.evaluators.run_evaluation --component privacy_sanitizer --use-ll
 python -m tests.evaluators.run_evaluation --all --use-llm --ci
 ```
 
-> **注意:** `--use-llm` を指定する場合は、環境変数 `OPENAI_API_KEY`（または Vertex AI 設定）が正しく設定されている必要があります。
+> **注意:** `--use-llm` を指定する場合は、環境変数（`GOOGLE_CLOUD_PROJECT` または `OPENAI_API_KEY`）が正しく設定されている必要があります。
 
 ### テストディレクトリ構成
 
@@ -455,8 +461,10 @@ backend/tests/
 ├── conftest.py               # MockLLMProvider、共通フィクスチャ
 ├── golden_datasets/           # Phase 1: 評価用テストケース (JSON)
 │   ├── intent_router.json
+│   ├── context_analyzer.json
 │   ├── privacy_sanitizer.json
 │   ├── insight_distiller.json
+│   ├── sharing_broker.json
 │   └── serendipity_matcher.json
 ├── layer1/                    # Phase 1: IntentRouter 単体テスト
 ├── layer2/                    # Phase 1: PrivacySanitizer 単体テスト
@@ -470,17 +478,17 @@ backend/tests/
 │   ├── run_evaluation.py      #   CLI エントリポイント
 │   └── test_evaluators.py     #   Evaluator 自体のテスト
 ├── eval_reports/              # 評価レポート出力先 (JSON)
-└── optimization/              # Phase 3: プロンプト自己最適化 (予定)
+└── optimization/              # Phase 3: プロンプト自己最適化 (実装中)
 ```
 
 ---
 
 ## 開発ロードマップ
 
-* [x] Phase 1: 最高の「独り言ツール」の構築
-* [ ] Phase 2: 精製パイプラインの安定化
-* [ ] Phase 3: 構造的マッチングの実装
-* [ ] Phase 4: Team-Up Suggestion Engine
+* [x] Phase 1: 最高の「独り言ツール」の構築（LangGraph 会話グラフ・Private RAG・PDF学習）
+* [x] Phase 2: 精製パイプラインの実装（Privacy Sanitizer / Insight Distiller / Structural Analyzer / Sharing Broker）
+* [~] Phase 3: 構造的マッチングの実装（Knowledge Store・Serendipity Matcher・Policy Weaver 実装中）
+* [ ] Phase 4: Team-Up Suggestion Engine（小規模チーム自動提案の完成）
 * [ ] Phase 5: 小規模プロジェクト自動生成
 
 ### 品質保証ロードマップ
