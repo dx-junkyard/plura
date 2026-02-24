@@ -19,6 +19,7 @@ from sqlalchemy import select
 from app.workers.celery_app import celery_app
 from app.db.base import async_session_maker, engine
 from app.models.document import Document, DocumentStatus
+from app.models.raw_log import RawLog, LogIntent
 from app.services.document_store import document_store
 from app.services.layer1.private_rag import private_rag, split_text_into_chunks
 
@@ -124,6 +125,29 @@ def process_document_task(self, document_id: str):
                     f"Document processing complete: {document_id}, "
                     f"pages={page_count}, chunks={stored_count}/{len(chunks)}"
                 )
+
+                # Step 5: 完了通知を RawLog に追加（エージェントからの報告として表示）
+                try:
+                    completion_log = RawLog(
+                        user_id=doc.user_id,
+                        content="[doc_ready]",
+                        content_type="system_notification",
+                        assistant_reply=(
+                            f"📄 ドキュメント「{doc.filename}」の読み込みが完了しました！"
+                            "「要約して」と指示したり、内容について質問してみてください。"
+                        ),
+                        intent=LogIntent.LOG,
+                        is_analyzed=True,
+                        is_processed_for_insight=True,
+                        is_structure_analyzed=True,
+                    )
+                    session.add(completion_log)
+                    await session.commit()
+                    logger.info(f"Completion notification logged for document: {document_id}")
+                except Exception as log_err:
+                    logger.warning(
+                        f"Failed to write completion log for document {document_id}: {log_err}"
+                    )
 
                 return {
                     "status": "success",
