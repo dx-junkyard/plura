@@ -1,4 +1,12 @@
-# 📂 `.claude/skills/plura-async-architecture.md`
+---
+name: plura-async-architecture
+description: |
+  PLURAの非同期タスク（Celery）およびLLM呼び出しに関するアーキテクチャガイドライン。
+  Celeryタスク設計、キュー分離、LLMタスクのリトライ・タイムアウト実装時に参照するスキル。
+  使用タイミング: 新規Celeryタスク追加、LLM呼び出しの非同期化、バックグラウンド処理の設計・実装時。
+---
+
+# 📂 PLURA Async Architecture Skill
 
 ## 概要
 PLURAの非同期タスク（Celery）およびLLM呼び出しに関するアーキテクチャガイドライン。
