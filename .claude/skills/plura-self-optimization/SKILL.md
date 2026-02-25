@@ -37,6 +37,7 @@ SituationRouter       StructuralAnalyzer
 | `SharingBroker` | `services/layer2/sharing_broker.py` | スコアリング妥当性, 閾値判定精度 | BALANCED |
 | `StructuralAnalyzer` | `services/layer2/structural_analyzer.py` | 関係性判定, probing_question品質 | DEEP |
 | `SerendipityMatcher` | `services/layer3/serendipity_matcher.py` | チーム補完性, Synergy Score | BALANCED |
+| `PolicyWeaver` | `services/layer3/policy_weaver.py` | ルールの柔軟性(Heuristic), 境界条件の明確さ | HEAVY |
 
 ---
 
@@ -267,6 +268,8 @@ def _has_llm_key():
     from app.core.config import settings
     return settings.is_openai_available() or settings.is_google_genai_available()
 ```
+
+**※非同期タスク(Celery)の評価:** `heavy_queue` で実行される `PolicyWeaver` 等のコンポーネントを単体テスト・評価する際は、Celeryワーカーを介さずに対象関数を同期的に呼び出すか、ワーカーを適切にモックすること。
 
 ### 3.4 共通フィクスチャ（conftest.py）
 
