@@ -89,6 +89,7 @@ class AckResponse(BaseModel):
         transcribed_text: Optional[str] = None,
         conversation_reply: Optional[str] = None,
         research_log_id: Optional[str] = None,
+        semantic_intent: Optional[str] = None,
     ) -> "AckResponse":
         """意図に応じた相槌を生成（conversation_reply がある場合はそれを優先表示用に含める）"""
         # STATE（状態共有）は即時共感のみ、構造分析はスキップ
@@ -139,7 +140,12 @@ class AckResponse(BaseModel):
         messages = ack_messages.get(intent, ack_messages[None])
         message = random.choice(messages)
 
-        skip_analysis = intent == LogIntent.DEEP_RESEARCH
+        # SUMMARIZE / CHAT は作業指示・雑談のため構造分析は不要
+        _SKIP_STRUCTURAL_SEMANTIC_INTENTS = frozenset({"summarize", "chat"})
+        skip_analysis = (
+            intent == LogIntent.DEEP_RESEARCH
+            or (semantic_intent or "") in _SKIP_STRUCTURAL_SEMANTIC_INTENTS
+        )
 
         return cls(
             message=message,

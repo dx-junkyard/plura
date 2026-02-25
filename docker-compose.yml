@@ -70,6 +70,25 @@ services:
     environment:
       QDRANT__LOG_LEVEL: ${QDRANT__LOG_LEVEL}
 
+  # MinIO Object Storage (PDF等の原本ファイル保存)
+  minio:
+    image: minio/minio:latest
+    container_name: mindyard-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Backend API (FastAPI)
   backend:
     build:
@@ -97,6 +116,12 @@ services:
       LLM_CONFIG_BALANCED: ${LLM_CONFIG_BALANCED:-}
       LLM_CONFIG_FAST: ${LLM_CONFIG_FAST:-}
       EMBEDDING_CONFIG: ${EMBEDDING_CONFIG:-}
+      # MinIO Object Storage
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-plura-documents}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
     ports:
       - "8000:8000"
     depends_on:
@@ -106,17 +131,19 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+      minio:
+        condition: service_healthy
     volumes:
       - ./backend:/app
       - ./.gcp:/root/.config/gcloud
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # Celery Worker
-  celery-worker:
+  # Celery Worker (Fast Queue) - リアルタイム応答に影響するタスク
+  worker-fast:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: mindyard-celery-worker
+    container_name: mindyard-worker-fast
     environment:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
@@ -133,6 +160,12 @@ services:
       LLM_CONFIG_BALANCED: ${LLM_CONFIG_BALANCED:-}
       LLM_CONFIG_FAST: ${LLM_CONFIG_FAST:-}
       EMBEDDING_CONFIG: ${EMBEDDING_CONFIG:-}
+      # MinIO Object Storage
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-plura-documents}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -141,7 +174,63 @@ services:
     volumes:
       - ./backend:/app
       - ./.gcp:/root/.config/gcloud
-    command: celery -A app.workers.celery_app worker --loglevel=info -Q layer1,layer2,celery
+    command: celery -A app.workers.celery_app worker --loglevel=info -Q layer1,layer2,celery -n fast@%h
+
+  # Celery Worker (Heavy Queue) - Policy Weaver等の重いLLM処理・PDF処理
+  worker-heavy:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mindyard-worker-heavy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+      QDRANT_HOST: ${QDRANT_HOST}
+      QDRANT_PORT: ${QDRANT_PORT}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Google Cloud / Gen AI (Gemini)
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_APPLICATION_CREDENTIALS: /app/.config/gcloud/application_default_credentials.json
+      # LLM Configuration (Multi-Provider)
+      LLM_CONFIG_DEEP: ${LLM_CONFIG_DEEP:-}
+      LLM_CONFIG_BALANCED: ${LLM_CONFIG_BALANCED:-}
+      LLM_CONFIG_FAST: ${LLM_CONFIG_FAST:-}
+      EMBEDDING_CONFIG: ${EMBEDDING_CONFIG:-}
+      # MinIO Object Storage
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-plura-documents}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./.gcp:/root/.config/gcloud
+    command: celery -A app.workers.celery_app worker --loglevel=info -Q heavy_queue -n heavy@%h --concurrency=2
+
+  # Celery Beat - スケジュール実行（TTL切れポリシー管理等）
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mindyard-celery-beat
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: celery -A app.workers.celery_app beat --loglevel=info
 
   # Frontend (Next.js)
   frontend:
@@ -164,3 +253,4 @@ volumes:
   postgres_data:
   redis_data:
   qdrant_data:
+  minio_data:

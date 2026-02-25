@@ -4,6 +4,7 @@ import './globals.css';
 import { Providers } from './providers';
 import { Navigation } from '@/components/Navigation';
 import { RecommendationPanel } from '@/components/RecommendationPanel';
+import { Toaster } from 'sonner';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -29,6 +30,7 @@ export default function RootLayout({
           <Navigation />
           <main className="pt-14 min-h-screen bg-gray-50">{children}</main>
           <RecommendationPanel />
+          <Toaster position="top-right" richColors />
         </Providers>
       </body>
     </html>

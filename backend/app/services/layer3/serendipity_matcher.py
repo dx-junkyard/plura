@@ -8,10 +8,14 @@ Retrieve & Evaluate パターン:
 """
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
+
+from sqlalchemy import select
 
 from app.core.llm import extract_json_from_text, llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
+from app.db.base import async_session_maker
+from app.models.user import User
 from app.services.layer3.knowledge_store import knowledge_store
 
 logger = logging.getLogger(__name__)
@@ -224,7 +228,7 @@ class SerendipityMatcher:
                 temperature=0.4,
             )
 
-            return self._parse_team_response(result, candidates)
+            return await self._parse_team_response(result, candidates)
 
         except Exception:
             # JSON パース失敗時は extract_json_from_text でリトライ
@@ -238,7 +242,7 @@ class SerendipityMatcher:
                 )
                 parsed = extract_json_from_text(response.content)
                 if parsed:
-                    return self._parse_team_response(parsed, candidates)
+                    return await self._parse_team_response(parsed, candidates)
             except Exception:
                 logger.warning("LLM synergy evaluation failed", exc_info=True)
 
@@ -258,7 +262,7 @@ class SerendipityMatcher:
             )
         return "\n".join(lines)
 
-    def _parse_team_response(
+    async def _parse_team_response(
         self,
         llm_result: Dict[str, Any],
         candidates: List[Dict],
@@ -285,6 +289,28 @@ class SerendipityMatcher:
             c.get("insight_id"): c for c in candidates
         }
 
+        # author_id を収集して User テーブルから display_name を取得
+        author_ids: Set[str] = set()
+        for member in members_raw:
+            insight_id = member.get("insight_id", "")
+            candidate = candidate_map.get(insight_id, {})
+            aid = candidate.get("author_id", "")
+            if aid:
+                author_ids.add(aid)
+
+        user_map: Dict[str, User] = {}
+        if author_ids:
+            try:
+                async with async_session_maker() as session:
+                    uuids = [uuid.UUID(aid) for aid in author_ids if aid]
+                    result = await session.execute(
+                        select(User).where(User.id.in_(uuids))
+                    )
+                    for user in result.scalars().all():
+                        user_map[str(user.id)] = user
+            except Exception:
+                logger.warning("Failed to resolve user info for team members", exc_info=True)
+
         team_members = []
         all_topics: List[str] = []
 
@@ -294,11 +320,20 @@ class SerendipityMatcher:
             member_topics = candidate.get("topics", [])
             all_topics.extend(member_topics)
 
+            author_id = candidate.get("author_id", "")
+            user = user_map.get(author_id)
+
+            display_name = (
+                user.display_name
+                if user and user.display_name
+                else member.get("display_name", "メンバー")
+            )
+
             team_members.append({
-                "user_id": insight_id,
-                "display_name": member.get("display_name", "メンバー"),
+                "user_id": author_id or insight_id,
+                "display_name": display_name,
                 "role": member.get("role", "メンバー"),
-                "avatar_url": None,
+                "avatar_url": user.avatar_url if user else None,
             })
 
         if not team_members:

@@ -1,0 +1,391 @@
+{
+  "component": "SharingBroker",
+  "version": "1.0",
+  "description": "SharingBroker の共有価値評価テストケース。スコア80以上の高品質インサイト5件、スコア40以下の低品質インサイト5件、境界域（60-80）のケース10件を網羅する。",
+  "cases": [
+    {
+      "id": "SB-001",
+      "input": {
+        "insight": {
+          "title": "スプリントベロシティの予測精度を上げる3スプリント平均法",
+          "summary": "過去3スプリントの平均ベロシティを使い、祝日・欠席を係数として掛け合わせる手法でコミット達成率が20%向上した。チームサイズが5-10名の場合に特に有効。",
+          "topics": ["アジャイル開発", "スプリントプランニング", "ベロシティ管理"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 80,
+        "should_propose": true,
+        "high_novelty": true,
+        "high_generality": true
+      },
+      "tags": ["high_score", "actionable", "data_backed", "agile"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SB-002",
+      "input": {
+        "insight": {
+          "title": "LLMを使ったオンボーディングボットでエンジニア質問数60%削減",
+          "summary": "社内ドキュメントをベクトルDB化し、Slack上で動作するRAGベースのチャットボットを実装。新人エンジニアの質問数が60%減少し、既存メンバーの作業割り込みも週平均3時間削減できた。",
+          "topics": ["LLM活用", "オンボーディング", "RAG", "エンジニアリング効率化"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 85,
+        "should_propose": true,
+        "high_novelty": true,
+        "high_generality": true
+      },
+      "tags": ["high_score", "actionable", "quantified_results", "llm"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SB-003",
+      "input": {
+        "insight": {
+          "title": "カスタマーサクセス主導のProduct-Led Growthで解約率を半減させた戦略",
+          "summary": "SaaS製品でCS担当がオンボーディング完了後30日以内にヘルススコアが低いユーザーへプロアクティブに介入する仕組みを構築。解約率が6ヶ月で50%低下し、NPS +15ポイント改善。具体的な介入タイミングとスクリプトも含む。",
+          "topics": ["カスタマーサクセス", "PLG", "チャーン対策", "SaaS"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 85,
+        "should_propose": true,
+        "high_novelty": true,
+        "high_generality": true
+      },
+      "tags": ["high_score", "actionable", "quantified_results", "saas"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SB-004",
+      "input": {
+        "insight": {
+          "title": "心理的安全性を高めるリトロスペクティブのファシリテーション技術",
+          "summary": "従来の「KPT」から「ふりかえりキャンバス」に切り替え、感情を言語化するウォームアップを追加することで発言量が2倍になった。特に心理的安全性が低い新チームや組織変革直後に有効なことを4チームで検証した。",
+          "topics": ["チームビルディング", "ふりかえり", "ファシリテーション", "心理的安全性"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 80,
+        "should_propose": true,
+        "high_novelty": true,
+        "high_generality": true
+      },
+      "tags": ["high_score", "actionable", "team_management", "verified"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SB-005",
+      "input": {
+        "insight": {
+          "title": "機能フラグを使ったB2B SaaSの段階的ロールアウト戦略",
+          "summary": "LaunchDarklyを使い、新機能を顧客規模・業種・利用頻度でセグメントしてロールアウト。本番障害の影響範囲を従来比80%削減し、フィードバックループが2週間から3日に短縮された。設定した閾値とロールバック基準も公開。",
+          "topics": ["機能フラグ", "ロールアウト", "SaaS運用", "インフラ"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 82,
+        "should_propose": true,
+        "high_novelty": true,
+        "high_generality": true
+      },
+      "tags": ["high_score", "actionable", "quantified_results", "devops"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SB-006",
+      "input": {
+        "insight": {
+          "title": "今日は普通の一日だった",
+          "summary": "特に変わったことはなく、いつも通り仕事をした。",
+          "topics": [],
+          "source_context": { "intent": "state_share", "emotion": "neutral" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_max": 20,
+        "should_propose": false,
+        "reason_keywords": ["一般性不足", "知見なし"]
+      },
+      "tags": ["low_score", "no_insight", "daily_log"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SB-007",
+      "input": {
+        "insight": {
+          "title": "テスト投稿",
+          "summary": "aaaaaaaaaaaaa",
+          "topics": [],
+          "source_context": { "intent": "chat", "emotion": "neutral" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_max": 10,
+        "should_propose": false,
+        "reason_keywords": ["テスト", "品質不足"]
+      },
+      "tags": ["low_score", "test_post", "spam"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SB-008",
+      "input": {
+        "insight": {
+          "title": "上司が嫌い",
+          "summary": "本当に最悪な上司で毎日つらい。愚痴を聞いてほしかっただけ。",
+          "topics": ["ストレス"],
+          "source_context": { "intent": "empathy", "emotion": "negative" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_max": 30,
+        "should_propose": false,
+        "reason_keywords": ["個人的愚痴", "一般化不能", "プライバシー"]
+      },
+      "tags": ["low_score", "vent", "personal", "privacy_sensitive"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SB-009",
+      "input": {
+        "insight": {
+          "title": "Pythonは良い言語だと思う",
+          "summary": "Pythonはシンプルで使いやすい。初心者にもおすすめ。",
+          "topics": ["Python"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_max": 35,
+        "should_propose": false,
+        "reason_keywords": ["独自性不足", "既知情報", "具体性不足"]
+      },
+      "tags": ["low_score", "generic", "no_novelty"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SB-010",
+      "input": {
+        "insight": {
+          "title": "プロジェクト管理が大事",
+          "summary": "プロジェクト管理はちゃんとやることが重要。計画を立てて実行すること。",
+          "topics": ["プロジェクト管理"],
+          "source_context": { "intent": "knowledge", "emotion": "neutral" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_max": 25,
+        "should_propose": false,
+        "reason_keywords": ["抽象的", "独自性なし", "行動指針なし"]
+      },
+      "tags": ["low_score", "too_abstract", "no_specifics"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SB-011",
+      "input": {
+        "insight": {
+          "title": "コードレビューのラウンドトリップ回数を減らす取り組み",
+          "summary": "PRテンプレートにチェックリストを追加し、レビュー前に自己チェックを義務化した。ラウンドトリップが平均3回から1.5回に減少。チームの規模や文化によって効果は異なる可能性がある。",
+          "topics": ["コードレビュー", "開発プロセス", "チーム効率"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 62,
+        "sharing_value_score_max": 78,
+        "should_propose": true
+      },
+      "tags": ["boundary", "actionable", "development_process"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SB-012",
+      "input": {
+        "insight": {
+          "title": "非同期コミュニケーションでミーティング数を削減した経験",
+          "summary": "Loomを使った非同期ビデオレポートを導入し、週次定例の数を半分に削減した。集中作業時間が増えた反面、意思決定のスピードが若干落ちた。トレードオフがあるため全チームへの適用には注意が必要。",
+          "topics": ["非同期コミュニケーション", "ミーティング削減", "リモートワーク"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 65,
+        "sharing_value_score_max": 78,
+        "should_propose": true
+      },
+      "tags": ["boundary", "actionable", "remote_work", "balanced_view"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SB-013",
+      "input": {
+        "insight": {
+          "title": "OKRとスクラムを組み合わせた目標管理の試み",
+          "summary": "四半期OKRをスプリントゴールに分解する方法を試みた。戦略と戦術の整合性は取れたが、スプリント中の急な優先度変更が難しくなるというデメリットも出た。",
+          "topics": ["OKR", "スクラム", "目標管理"],
+          "source_context": { "intent": "knowledge", "emotion": "neutral" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 60,
+        "sharing_value_score_max": 76,
+        "should_propose": true
+      },
+      "tags": ["boundary", "management", "mixed_results"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SB-014",
+      "input": {
+        "insight": {
+          "title": "新人エンジニアのメンタリングで気づいた教え方のコツ",
+          "summary": "質問に直接答えるより、ソクラテス式の問い返しで自力で答えに辿り着かせると理解定着が良いと感じた。ただし時間がかかるため、締め切り前には使いにくい方法でもある。",
+          "topics": ["メンタリング", "教育", "エンジニア育成"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 63,
+        "sharing_value_score_max": 77,
+        "should_propose": true
+      },
+      "tags": ["boundary", "mentoring", "education", "subjective"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SB-015",
+      "input": {
+        "insight": {
+          "title": "技術負債を可視化してステークホルダーに説明した方法",
+          "summary": "技術負債を「開発速度への影響（時間/週）」と「発生確率」でマトリクス化し、ビジネスコストとして経営層に提示した。予算獲得には成功したが、全ての技術負債をビジネス指標に翻訳するのは難しかった。",
+          "topics": ["技術負債", "ステークホルダー管理", "エンジニアリングマネジメント"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 70,
+        "sharing_value_score_max": 80,
+        "should_propose": true
+      },
+      "tags": ["boundary", "actionable", "stakeholder", "engineering_management"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SB-016",
+      "input": {
+        "insight": {
+          "title": "ユーザーインタビューを効率化するスクリーニングアンケート設計",
+          "summary": "インタビュー前に5問のスクリーニングを実施し、ペルソナに合致するユーザーのみを選定するプロセスを作った。インタビューの質が上がり、無駄なセッションが減った。スクリーニング項目のテンプレートも共有できる。",
+          "topics": ["ユーザーリサーチ", "インタビュー設計", "UXリサーチ"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 68,
+        "sharing_value_score_max": 79,
+        "should_propose": true
+      },
+      "tags": ["boundary", "actionable", "ux_research", "template_available"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SB-017",
+      "input": {
+        "insight": {
+          "title": "SLO策定でチームと運用の優先度をすり合わせた経験",
+          "summary": "サービスレベル目標（SLO）をエンジニアとビジネスサイドが共同で設定するワークショップを実施。「99.9%」などの数値の意味をビジネス語に翻訳することで合意を得やすくなった。ただし組織文化によって難易度が変わる。",
+          "topics": ["SLO", "SRE", "組織横断コミュニケーション"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 65,
+        "sharing_value_score_max": 78,
+        "should_propose": true
+      },
+      "tags": ["boundary", "sre", "cross_team", "workshop"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SB-018",
+      "input": {
+        "insight": {
+          "title": "採用面接でカルチャーフィットを評価する構造化面接手法",
+          "summary": "バリューベースの行動面接（BEI）を導入し、全面接官が同じルーブリックで評価する仕組みを作った。入社後のミスマッチが約30%減少した。ただし面接官トレーニングに相応のコストがかかる。",
+          "topics": ["採用", "構造化面接", "カルチャーフィット", "HR"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 67,
+        "sharing_value_score_max": 79,
+        "should_propose": true
+      },
+      "tags": ["boundary", "hr", "structured_interview", "quantified"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SB-019",
+      "input": {
+        "insight": {
+          "title": "DesignOpsでデザインと開発のハンドオフコストを削減した取り組み",
+          "summary": "FigmaのDev Modeを活用し、デザインから実装仕様への自動生成を試みた。ハンドオフ時間を週2時間削減できたが、複雑なコンポーネントは手動調整が依然必要。DesignOps成熟度によって効果が異なる。",
+          "topics": ["DesignOps", "Figma", "デザインシステム", "エンジニアリング効率"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 64,
+        "sharing_value_score_max": 77,
+        "should_propose": true
+      },
+      "tags": ["boundary", "design_ops", "tooling", "partial_success"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "SB-020",
+      "input": {
+        "insight": {
+          "title": "内製AIコーディングアシスタントで開発速度を40%向上",
+          "summary": "社内コードベースに特化したRAGシステムを構築し、GitHub Copilotに加えて社内独自のコンテキストを持つコーディングアシスタントを実装。PRの初稿作成時間が40%短縮。プロプライエタリコードの漏洩リスクを軽減しながらAI活用を実現した事例として共有価値が高い。",
+          "topics": ["AI活用", "コーディングアシスタント", "RAG", "開発生産性"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 83,
+        "should_propose": true,
+        "high_novelty": true,
+        "high_generality": true
+      },
+      "tags": ["high_score", "ai", "quantified_results", "privacy_conscious"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "SB-021",
+      "input": {
+        "insight": {
+          "title": "エンジニアの燃え尽きを防ぐ1on1設計の工夫",
+          "summary": "月1回の1on1に「エネルギーレベルチェック」と「最近の小さな勝利」の共有を組み込んだ。6ヶ月後のチームサーベイでバーンアウトリスクが下がったと回答する割合が増えた。ただし効果の定量化が難しく、経営層への説明には課題が残る。",
+          "topics": ["エンジニアマネジメント", "バーンアウト対策", "1on1", "ウェルビーイング"],
+          "source_context": { "intent": "knowledge", "emotion": "positive" }
+        }
+      },
+      "expected": {
+        "sharing_value_score_min": 63,
+        "sharing_value_score_max": 78,
+        "should_propose": true
+      },
+      "tags": ["boundary", "management", "wellbeing", "soft_metrics"],
+      "difficulty": "medium"
+    }
+  ]
+}

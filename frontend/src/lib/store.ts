@@ -98,6 +98,24 @@ export interface ChatMessage {
 export function rawLogToMessages(log: RawLog): ChatMessage[] {
   const msgs: ChatMessage[] = [];
 
+  // system_notification: バックエンドからの通知メッセージ（ドキュメント処理完了など）
+  // ユーザー発言は表示せず、assistant_reply のみをアシスタントメッセージとして表示する
+  if (log.content_type === 'system_notification') {
+    if (log.assistant_reply) {
+      msgs.push({
+        id: `sysnotif-${log.id}`,
+        type: 'assistant',
+        content: log.assistant_reply,
+        timestamp: log.created_at,
+        logId: log.id,
+      });
+    }
+    return msgs;
+  }
+
+  const drMeta = log.metadata_analysis?.deep_research;
+  const isDeepResearchComplete = drMeta != null && (drMeta.summary || drMeta.details);
+
   // 1. ユーザーの発言
   msgs.push({
     id: `user-${log.id}`,
@@ -108,29 +126,47 @@ export function rawLogToMessages(log: RawLog): ChatMessage[] {
     isVoiceInput: log.content_type === 'voice',
   });
 
-  // 2. アシスタントの返答 or 相槌
-  msgs.push({
-    id: `ack-${log.id}`,
-    type: log.assistant_reply ? 'assistant' : 'system',
-    content: log.assistant_reply || '受け取りました。',
-    timestamp: log.created_at,
-    logId: log.id,
-    researchSummary: log.metadata_analysis?.deep_research?.summary,
-    researchDetails: log.metadata_analysis?.deep_research?.details,
-    isResearchCacheHit: log.metadata_analysis?.deep_research?.is_cache_hit,
-  });
-
-  // 3. 構造分析の深掘り問い（あれば）
-  if (log.structural_analysis?.probing_question) {
+  if (isDeepResearchComplete) {
+    // Deep Research 完了済み — 完了通知 + 結果カードの2メッセージで復元
     msgs.push({
-      id: `ai-${log.id}`,
-      type: 'ai-question',
-      content: log.structural_analysis.probing_question,
-      timestamp: log.updated_at,
+      id: `research-complete-${log.id}`,
+      type: 'system',
+      content: '調査が完了しました。',
+      timestamp: log.created_at,
       logId: log.id,
-      relationshipType: log.structural_analysis.relationship_type,
-      structuralAnalysis: log.structural_analysis ?? undefined,
     });
+    msgs.push({
+      id: `research-result-${log.id}`,
+      type: 'assistant',
+      content: log.assistant_reply || drMeta.summary || '',
+      timestamp: log.updated_at || log.created_at,
+      logId: log.id,
+      researchSummary: drMeta.summary,
+      researchDetails: drMeta.details,
+      isResearchCacheHit: drMeta.is_cache_hit,
+    });
+  } else {
+    // 2. 通常のアシスタント返答 or 相槌
+    msgs.push({
+      id: `ack-${log.id}`,
+      type: log.assistant_reply ? 'assistant' : 'system',
+      content: log.assistant_reply || '受け取りました。',
+      timestamp: log.created_at,
+      logId: log.id,
+    });
+
+    // 3. 構造分析の深掘り問い（あれば）
+    if (log.structural_analysis?.probing_question) {
+      msgs.push({
+        id: `ai-${log.id}`,
+        type: 'ai-question',
+        content: log.structural_analysis.probing_question,
+        timestamp: log.updated_at,
+        logId: log.id,
+        relationshipType: log.structural_analysis.relationship_type,
+        structuralAnalysis: log.structural_analysis ?? undefined,
+      });
+    }
   }
 
   return msgs;

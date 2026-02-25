@@ -5,10 +5,12 @@ Layer 2: 個人特定につながる情報を除去・置換するフィルタ�
 正確性が重要なため、BALANCEDモデルを使用。
 """
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.llm import llm_manager
 from app.core.llm_provider import LLMProvider, LLMUsageRole
+
+_UNSET: Any = object()  # sentinel: _provider の「未初期化」を None と区別するため
 
 
 class PrivacySanitizer:
@@ -23,7 +25,7 @@ class PrivacySanitizer:
     """
 
     def __init__(self):
-        self._provider: Optional[LLMProvider] = None
+        self._provider: Any = _UNSET  # _UNSET=未初期化, None=明示的にNULL設定
 
         # 正規表現パターン
         self.patterns = {
@@ -37,11 +39,11 @@ class PrivacySanitizer:
 
     def _get_provider(self) -> Optional[LLMProvider]:
         """LLMプロバイダーを取得（遅延初期化）"""
-        if self._provider is None:
+        if self._provider is _UNSET:
             try:
                 self._provider = llm_manager.get_client(LLMUsageRole.BALANCED)
             except Exception:
-                pass
+                self._provider = None
         return self._provider
 
     @property
@@ -71,7 +73,7 @@ class PrivacySanitizer:
             replacements.extend(llm_replacements)
         else:
             # フォールバック: 名前パターンの簡易検出
-            sanitized, name_replacements = self._apply_name_pattern_detection(sanitized)
+            sanitized, name_replacements = self._sanitize_fallback(sanitized)
             replacements.extend(name_replacements)
 
         metadata = {
@@ -123,26 +125,21 @@ class PrivacySanitizer:
 
         return sanitized, replacements
 
-    def _apply_name_pattern_detection(self, content: str) -> Tuple[str, List[Dict]]:
-        """名前パターンの簡易検出"""
+    def _sanitize_fallback(self, content: str) -> Tuple[str, List[Dict]]:
+        """LLMが利用できない場合のルールベースの匿名化"""
         sanitized = content
         replacements = []
-
-        for suffix in self.name_suffixes:
-            # 「〇〇さん」パターンを検出
-            pattern = rf"([一-龯ぁ-んァ-ン]+){suffix}"
-            for match in re.finditer(pattern, sanitized):
-                original = match.group()
-                name_part = match.group(1)
-                if len(name_part) >= 1 and len(name_part) <= 4:  # 妥当な名前長
-                    replacement = f"[担当者]{suffix}"
-                    sanitized = sanitized.replace(original, replacement, 1)
-                    replacements.append({
-                        "type": "name",
-                        "original": original,
-                        "replacement": replacement,
-                    })
-
+        pattern = re.compile(r'([一-龠ぁ-んァ-ヶ]{2,})(さん|様|氏|君|ちゃん|先生|部長|課長|社長)')
+        for match in pattern.finditer(content):
+            original = match.group(0)
+            suffix = match.group(2)
+            placeholder = "[担当者]"
+            sanitized = sanitized.replace(original, placeholder + suffix, 1)
+            replacements.append({
+                "type": "name",
+                "original": original,
+                "replacement": placeholder
+            })
         return sanitized, replacements
 
     async def _apply_llm_generalization(self, content: str) -> Tuple[str, List[Dict]]:

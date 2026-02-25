@@ -127,6 +127,7 @@ class KnowledgeStore:
                         vector=embedding,
                         payload={
                             "insight_id": insight_id,
+                            "author_id": insight.get("author_id", ""),
                             "title": insight.get("title", ""),
                             "summary": insight.get("summary", ""),
                             "topics": insight.get("topics", []),
@@ -196,6 +197,7 @@ class KnowledgeStore:
             return [
                 {
                     "insight_id": hit.payload.get("insight_id"),
+                    "author_id": hit.payload.get("author_id", ""),
                     "title": hit.payload.get("title"),
                     "summary": hit.payload.get("summary"),
                     "topics": hit.payload.get("topics", []),

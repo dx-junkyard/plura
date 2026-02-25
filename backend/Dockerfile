@@ -19,9 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 依存関係のインストール
 COPY requirements.txt .
-RUN pip install --no-cache-dir "setuptools<70" wheel
-
-RUN pip install --no-cache-dir --no-build-isolation openai-whisper==20231117
+RUN pip install --no-cache-dir -U setuptools wheel  # 最新に更新
 
 RUN pip install --no-cache-dir -r requirements.txt
 

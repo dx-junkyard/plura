@@ -24,6 +24,8 @@ from app.schemas.raw_log import (
 )
 from app.services.layer1.context_analyzer import context_analyzer
 from app.services.layer1.conversation_agent import conversation_agent
+from app.services.layer1.conversation_graph import run_conversation
+from app.services.layer1.intent_router import semantic_router
 from app.services.layer1.situation_router import situation_router
 from app.workers.tasks import analyze_log_structure, process_log_for_insight, run_deep_research_task
 from app.core.config import settings
@@ -94,6 +96,8 @@ async def create_log(
 
     # 非同期でContext Analyzerを実行
     # 実際の実装ではCeleryタスクとして実行
+    # SemanticRouterが検出した意図を後続処理のために保持する変数
+    _semantic_intent: Optional[str] = None
     try:
         analysis = await context_analyzer.analyze(log_in.content)
         log.intent = analysis.get("intent")
@@ -103,6 +107,39 @@ async def create_log(
         log.tags = analysis.get("tags")
         log.metadata_analysis = analysis.get("metadata_analysis")
         log.is_analyzed = True
+
+        # ── Semantic Router: 短い入力のEmpathy誤爆防止 ──
+        # 50文字以下の入力に対してEmbeddingベースで意図を判定し、
+        # 要約・検索・知識系なら emotion_scores をリセットして
+        # StructuralAnalyzer が Empathy モードに誤爆するのを防ぐ。
+        if len(log_in.content.strip()) <= semantic_router.SHORT_INPUT_MAX_LEN:
+            try:
+                semantic_result = await semantic_router.route(log_in.content)
+                if semantic_result:
+                    _semantic_intent = semantic_result.get("semantic_intent", "")
+                    if semantic_router.is_non_empathy_intent(_semantic_intent):
+                        _logger = logging.getLogger(__name__)
+                        _logger.info(
+                            "SemanticRouter override: resetting emotion_scores for short non-empathy input. "
+                            "semantic_intent=%s, confidence=%.3f, input=%.40s",
+                            _semantic_intent,
+                            semantic_result.get("confidence", 0),
+                            log_in.content,
+                        )
+                        log.emotion_scores = {"neutral": 0.1}
+                        log.emotions = ["neutral"]
+                    # 構造分析スキップ判定のために semantic_intent をメタデータに保存する
+                    # （analyze_log_structure タスクはログIDしか受け取れないため）
+                    if _semantic_intent:
+                        if log.metadata_analysis is None:
+                            log.metadata_analysis = {}
+                        log.metadata_analysis["semantic_intent"] = _semantic_intent
+                        from sqlalchemy.orm.attributes import flag_modified as _flag_modified
+                        _flag_modified(log, "metadata_analysis")
+            except Exception as sr_err:
+                _logger = logging.getLogger(__name__)
+                _logger.debug("SemanticRouter.route failed (non-critical): %s", sr_err)
+
         await session.commit()
         await session.refresh(log)
     except Exception:
@@ -110,9 +147,11 @@ async def create_log(
         pass
 
     # Deep Research の場合、バックグラウンドタスクをキックして即時応答を返す
+    # ただし SemanticRouter が "summarize" を検出済みの場合は要約処理を優先する
+    # （context_analyzer に SUMMARIZE インテントがないため DEEP_RESEARCH に誤分類される場合への対策）
     conversation_reply = None
 
-    if log.intent == LogIntent.DEEP_RESEARCH:
+    if log.intent == LogIntent.DEEP_RESEARCH and _semantic_intent != "summarize":
         try:
             run_deep_research_task.delay(
                 user_id=str(current_user.id),
@@ -134,8 +173,8 @@ async def create_log(
             _logger.error("Failed to queue deep research task: %s", e)
             conversation_reply = "Deep Researchの開始に失敗しました。"
 
-    elif log.intent != LogIntent.STATE:
-        # 状態共有（STATE）は即時の共感応答のみ返し、構造分析は実行しない
+    elif log.intent != LogIntent.STATE and _semantic_intent not in ("summarize", "chat"):
+        # STATE は即時共感応答のみ、SUMMARIZE / CHAT は作業指示・雑談のため構造分析不要
         # 構造分析タスクを非同期でキック（Layer 2）
         try:
             analyze_log_structure.delay(str(log.id))
@@ -151,61 +190,91 @@ async def create_log(
 
     # Deep Research 実行時は会話エージェントをスキップ（既に返答が決まっている）
     if conversation_reply is None:
-        # 直前の構造的課題を取得（Situation Router 用）
-        # 1. 同一スレッド内を探す → 2. なければスレッド横断で直近ログを参照
-        previous_topic = None
-        prev_log = None
-
-        # ── 1. 同一スレッド内 ──
-        if log.thread_id:
-            prev_result = await session.execute(
-                select(RawLog)
-                .where(
-                    RawLog.user_id == current_user.id,
-                    RawLog.thread_id == log.thread_id,
-                    RawLog.id != log.id,
+        # ── SUMMARIZE: ConversationGraph 経由でドキュメント要約を生成 ──
+        # SemanticRouter が "summarize" を検出した場合、conversation_agent の代わりに
+        # ConversationGraph の SummarizeNode を呼び出してRAGベースの要約を生成する。
+        if _semantic_intent == "summarize":
+            try:
+                _logger = logging.getLogger(__name__)
+                _logger.info(
+                    "create_log: routing to SummarizeNode via ConversationGraph. input=%.40s",
+                    log_in.content,
                 )
-                .order_by(desc(RawLog.created_at))
-                .limit(1)
-            )
-            prev_log = prev_result.scalar_one_or_none()
-
-        # ── 2. フォールバック: スレッド横断で直近ログ ──
-        if prev_log is None:
-            fallback_result = await session.execute(
-                select(RawLog)
-                .where(
-                    RawLog.user_id == current_user.id,
-                    RawLog.id != log.id,
+                conv_result = await run_conversation(
+                    input_text=log_in.content,
+                    user_id=str(current_user.id),
+                    mode_override="summarize",
+                    thread_id=str(log.thread_id) if log.thread_id else None,
                 )
-                .order_by(desc(RawLog.created_at))
-                .limit(1)
-            )
-            prev_log = fallback_result.scalar_one_or_none()
+                conversation_reply = conv_result.response
+                if conversation_reply:
+                    log.assistant_reply = conversation_reply
+                    await session.commit()
+            except Exception as e:
+                _logger = logging.getLogger(__name__)
+                _logger.warning(
+                    "create_log: run_conversation (summarize) failed, falling back to conversation_agent: %s",
+                    e,
+                    exc_info=True,
+                )
 
-        if prev_log and prev_log.structural_analysis:
-            previous_topic = (
-                prev_log.structural_analysis.get("updated_structural_issue")
-                or prev_log.structural_analysis.get("structural_issue")
-            )
-
-        # 状況をコードで分類し、会話エージェントに渡す
-        situation = situation_router.classify(log_in.content, previous_topic)
-
-        # 会話ラリー用の自然な返答を生成（スレッド履歴 + 状況）
-        try:
-            conversation_reply = await conversation_agent.generate_reply(
-                session, current_user.id, log, situation=situation
-            )
-            if conversation_reply:
-                log.assistant_reply = conversation_reply
-                await session.commit()
-        except Exception as e:
-            _logger = logging.getLogger(__name__)
-            _logger.warning("create_log: conversation_agent failed: %s", e, exc_info=True)
+        # ── 通常の会話エージェント（SUMMARIZE 以外、またはSummarizeNode失敗時のフォールバック） ──
         if conversation_reply is None:
-            _logger = logging.getLogger(__name__)
-            _logger.info("create_log: conversation_reply not generated (BALANCED LLM / OPENAI_API_KEY may be missing)")
+            # 直前の構造的課題を取得（Situation Router 用）
+            # 1. 同一スレッド内を探す → 2. なければスレッド横断で直近ログを参照
+            previous_topic = None
+            prev_log = None
+
+            # ── 1. 同一スレッド内 ──
+            if log.thread_id:
+                prev_result = await session.execute(
+                    select(RawLog)
+                    .where(
+                        RawLog.user_id == current_user.id,
+                        RawLog.thread_id == log.thread_id,
+                        RawLog.id != log.id,
+                    )
+                    .order_by(desc(RawLog.created_at))
+                    .limit(1)
+                )
+                prev_log = prev_result.scalar_one_or_none()
+
+            # ── 2. フォールバック: スレッド横断で直近ログ ──
+            if prev_log is None:
+                fallback_result = await session.execute(
+                    select(RawLog)
+                    .where(
+                        RawLog.user_id == current_user.id,
+                        RawLog.id != log.id,
+                    )
+                    .order_by(desc(RawLog.created_at))
+                    .limit(1)
+                )
+                prev_log = fallback_result.scalar_one_or_none()
+
+            if prev_log and prev_log.structural_analysis:
+                previous_topic = (
+                    prev_log.structural_analysis.get("updated_structural_issue")
+                    or prev_log.structural_analysis.get("structural_issue")
+                )
+
+            # 状況をコードで分類し、会話エージェントに渡す
+            situation = situation_router.classify(log_in.content, previous_topic)
+
+            # 会話ラリー用の自然な返答を生成（スレッド履歴 + 状況）
+            try:
+                conversation_reply = await conversation_agent.generate_reply(
+                    session, current_user.id, log, situation=situation
+                )
+                if conversation_reply:
+                    log.assistant_reply = conversation_reply
+                    await session.commit()
+            except Exception as e:
+                _logger = logging.getLogger(__name__)
+                _logger.warning("create_log: conversation_agent failed: %s", e, exc_info=True)
+            if conversation_reply is None:
+                _logger = logging.getLogger(__name__)
+                _logger.info("create_log: conversation_reply not generated (BALANCED LLM / OPENAI_API_KEY may be missing)")
 
     # 受容的な相槌を返す
     return AckResponse.create_ack(
@@ -216,6 +285,7 @@ async def create_log(
         content=log.content,
         conversation_reply=conversation_reply,
         research_log_id=str(log.id) if log.intent == LogIntent.DEEP_RESEARCH else None,
+        semantic_intent=_semantic_intent,
     )
 
 

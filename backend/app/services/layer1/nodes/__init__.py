@@ -10,6 +10,7 @@ from app.services.layer1.nodes.brainstorm_node import run_brainstorm_node
 from app.services.layer1.nodes.state_node import run_state_node
 from app.services.layer1.nodes.deep_research_node import run_deep_research_node
 from app.services.layer1.nodes.research_proposal_node import run_research_proposal_node
+from app.services.layer1.nodes.summarize_node import run_summarize_node
 
 __all__ = [
     "run_chat_node",
@@ -20,4 +21,5 @@ __all__ = [
     "run_state_node",
     "run_deep_research_node",
     "run_research_proposal_node",
+    "run_summarize_node",
 ]

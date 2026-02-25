@@ -1,0 +1,2223 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PLURA",
+    "description": "\n    PLURA: 自分だけのノートから、みんなの集合知へ\n\n    個人が自分のために行う「記録（Log）」を、\n    組織全体の「集合知（Wisdom of Crowds）」へと自然に変換する\n    ナレッジ共創プラットフォーム\n    ",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "認証"
+        ],
+        "summary": "Register",
+        "description": "新規ユーザー登録",
+        "operationId": "register_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "認証"
+        ],
+        "summary": "Login",
+        "description": "ユーザーログイン",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserLogin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "認証"
+        ],
+        "summary": "Get Me",
+        "description": "現在のユーザー情報を取得",
+        "operationId": "get_me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/logs/": {
+      "post": {
+        "tags": [
+          "ログ (Layer 1)"
+        ],
+        "summary": "Create Log",
+        "description": "新しいログを作成\n\nノン・ジャッジメンタル応答:\nAIは「回答」や「アドバイス」を行わない。\n「聞く」ことに徹し、受容的な相槌（Ack）のみを返す。",
+        "operationId": "create_log_api_v1_logs__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RawLogCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AckResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "ログ (Layer 1)"
+        ],
+        "summary": "List Logs",
+        "description": "ログ一覧を取得（自分のログのみ）\nタイムラインビュー用",
+        "operationId": "list_logs_api_v1_logs__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawLogListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/logs/{log_id}": {
+      "get": {
+        "tags": [
+          "ログ (Layer 1)"
+        ],
+        "summary": "Get Log",
+        "description": "特定のログを取得",
+        "operationId": "get_log_api_v1_logs__log_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "log_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Log Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RawLogResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ログ (Layer 1)"
+        ],
+        "summary": "Delete Log",
+        "description": "ログを削除",
+        "operationId": "delete_log_api_v1_logs__log_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "log_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Log Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/logs/calendar/{year}/{month}": {
+      "get": {
+        "tags": [
+          "ログ (Layer 1)"
+        ],
+        "summary": "Get Logs By Month",
+        "description": "カレンダービュー用: 月別のログ日付リスト",
+        "operationId": "get_logs_by_month_api_v1_logs_calendar__year___month__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "year",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Year"
+            }
+          },
+          {
+            "name": "month",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Month"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/logs/transcribe": {
+      "post": {
+        "tags": [
+          "ログ (Layer 1)"
+        ],
+        "summary": "Transcribe Audio",
+        "description": "音声ファイルをWhisper APIで文字起こしし、ログとして保存\n\n- 音声ファイルを受け取り、OpenAI Whisper APIで文字起こし\n- 文字起こし結果をログとして保存\n- Context Analyzer と Structural Analyzer を実行",
+        "operationId": "transcribe_audio_api_v1_logs_transcribe_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_transcribe_audio_api_v1_logs_transcribe_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AckResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/conversation/": {
+      "post": {
+        "tags": [
+          "会話 (LangGraph)"
+        ],
+        "summary": "Converse",
+        "description": "会話エンドポイント: LangGraphで意図を分類し、適切なノードで応答を生成\n\nリクエスト: {\"message\": \"...\", \"mode_override\": \"empathy\" (optional), \"research_approved\": false}\n- 自動モード: messageからAIが意図を判定して最適なノードへルーティング\n- 手動モード: mode_overrideで意図を強制指定（/vent, /idea 等のスラッシュコマンド対応）\n- Deep Research: research_approved=true でリサーチ実行\n\nレスポンスには以下が含まれる:\n- response: AIの即時回答\n- intent_badge: 判定されたインテント情報（UI表示用）\n- background_task: 非同期タスク情報（Shadow Reply用、knowledgeノード時のみ）\n- requires_research_consent: Deep Research 提案フラグ",
+        "operationId": "converse_api_v1_conversation__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/insights/": {
+      "get": {
+        "tags": [
+          "インサイト (Layer 3)"
+        ],
+        "summary": "List Insights",
+        "description": "公開インサイト一覧を取得\n誰でも閲覧可能（認証オプショナル）",
+        "operationId": "list_insights_api_v1_insights__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "topic",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightCardListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/insights/my": {
+      "get": {
+        "tags": [
+          "インサイト (Layer 3)"
+        ],
+        "summary": "List My Insights",
+        "description": "自分のインサイト一覧を取得",
+        "operationId": "list_my_insights_api_v1_insights_my_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "status_filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/InsightStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Filter"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightCardListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/insights/pending": {
+      "get": {
+        "tags": [
+          "インサイト (Layer 3)"
+        ],
+        "summary": "Get Pending Proposals",
+        "description": "承認待ちの共有提案を取得\nSharing Broker からの提案",
+        "operationId": "get_pending_proposals_api_v1_insights_pending_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SharingProposal"
+                  },
+                  "type": "array",
+                  "title": "Response Get Pending Proposals Api V1 Insights Pending Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/insights/decide": {
+      "post": {
+        "tags": [
+          "インサイト (Layer 3)"
+        ],
+        "summary": "Decide Sharing",
+        "description": "共有の承認/拒否を決定",
+        "operationId": "decide_sharing_api_v1_insights_decide_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharingDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightCardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/insights/{insight_id}": {
+      "get": {
+        "tags": [
+          "インサイト (Layer 3)"
+        ],
+        "summary": "Get Insight",
+        "description": "インサイト詳細を取得",
+        "operationId": "get_insight_api_v1_insights__insight_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "insight_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Insight Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightCardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/insights/{insight_id}/thanks": {
+      "post": {
+        "tags": [
+          "インサイト (Layer 3)"
+        ],
+        "summary": "Send Thanks",
+        "description": "インサイトに「ありがとう」を送る\nフィードバック機能",
+        "operationId": "send_thanks_api_v1_insights__insight_id__thanks_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "insight_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Insight Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recommendations/": {
+      "post": {
+        "tags": [
+          "レコメンデーション"
+        ],
+        "summary": "Get Recommendations",
+        "description": "入力中のテキストに基づいて関連インサイトを取得\n\nSerendipity Matcher による「副作用的」レコメンデーション\n- ユーザーが「検索」する前に関連情報を提示\n- 入力中/入力直後にトリガー",
+        "operationId": "get_recommendations_api_v1_recommendations__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecommendationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/recommendations/similar/{insight_id}": {
+      "get": {
+        "tags": [
+          "レコメンデーション"
+        ],
+        "summary": "Get Similar Insights",
+        "description": "特定のインサイトに類似するインサイトを取得\nグラフ接続による関連知見の探索",
+        "operationId": "get_similar_insights_api_v1_recommendations_similar__insight_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "insight_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Insight Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 20,
+              "minimum": 1,
+              "default": 5,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "summary": "Root",
+        "description": "ルートエンドポイント",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "ヘルスチェックエンドポイント",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AckResponse": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "log_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Log Id"
+          },
+          "thread_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Thread Id"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "transcribed_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcribed Text"
+          },
+          "skip_structural_analysis": {
+            "type": "boolean",
+            "title": "Skip Structural Analysis",
+            "default": false
+          },
+          "conversation_reply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Reply"
+          },
+          "requires_research_consent": {
+            "type": "boolean",
+            "title": "Requires Research Consent",
+            "default": false
+          },
+          "research_log_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Research Log Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "log_id",
+          "thread_id",
+          "timestamp"
+        ],
+        "title": "AckResponse",
+        "description": "ノン・ジャッジメンタル応答\n「聞く」ことに徹した受容的な相槌 + 会話ラリー用の自然言語返答"
+      },
+      "BackgroundTask": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "title": "Task Id"
+          },
+          "task_type": {
+            "type": "string",
+            "title": "Task Type"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "default": "queued"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "ユーザーに表示するメッセージ"
+          },
+          "result_log_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Log Id",
+            "description": "結果が保存される RawLog の ID（ポーリング用）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "task_type",
+          "message"
+        ],
+        "title": "BackgroundTask",
+        "description": "非同期バックグラウンドタスクの情報"
+      },
+      "Body_transcribe_audio_api_v1_logs_transcribe_post": {
+        "properties": {
+          "audio": {
+            "type": "string",
+            "format": "binary",
+            "title": "Audio"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "audio"
+        ],
+        "title": "Body_transcribe_audio_api_v1_logs_transcribe_post"
+      },
+      "ConversationIntent": {
+        "type": "string",
+        "enum": [
+          "chat",
+          "empathy",
+          "knowledge",
+          "deep_dive",
+          "brainstorm",
+          "probe",
+          "state_share"
+        ],
+        "title": "ConversationIntent",
+        "description": "会話の意図分類"
+      },
+      "ConversationRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Message",
+            "description": "ユーザー入力テキスト"
+          },
+          "mode_override": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationIntent"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "モード強制上書き（Mode Switcher機能）"
+          },
+          "research_approved": {
+            "type": "boolean",
+            "title": "Research Approved",
+            "description": "Deep Research の提案フェーズを開始する場合 True",
+            "default": false
+          },
+          "research_plan_confirmed": {
+            "type": "boolean",
+            "title": "Research Plan Confirmed",
+            "description": "調査計画書を確認済みで実行を開始する場合 True",
+            "default": false
+          },
+          "research_plan": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Research Plan",
+            "description": "確認済みの調査計画書データ"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id",
+            "description": "会話スレッドID（Deep Research 結果の保存先特定に使用）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "ConversationRequest",
+        "description": "会話リクエスト"
+      },
+      "ConversationResponse": {
+        "properties": {
+          "response": {
+            "type": "string",
+            "title": "Response",
+            "description": "AIの即時回答"
+          },
+          "intent_badge": {
+            "$ref": "#/components/schemas/IntentBadge",
+            "description": "判定されたインテントバッジ"
+          },
+          "background_task_info": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Background Task Info",
+            "description": "Deep Research等のノードから直接返却されるタスク情報"
+          },
+          "background_task": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackgroundTask"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "非同期タスク情報（Shadow Reply用）"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "requires_research_consent": {
+            "type": "boolean",
+            "title": "Requires Research Consent",
+            "description": "Deep Research の提案が含まれている場合 True",
+            "default": false
+          },
+          "is_researching": {
+            "type": "boolean",
+            "title": "Is Researching",
+            "description": "Deep Research が非同期実行中の場合 True",
+            "default": false
+          },
+          "research_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResearchPlan"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "調査計画書（ユーザー確認待ち）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "response",
+          "intent_badge",
+          "user_id"
+        ],
+        "title": "ConversationResponse",
+        "description": "会話レスポンス"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "InsightCardListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InsightCardResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "InsightCardListResponse",
+        "description": "インサイトリストレスポンス"
+      },
+      "InsightCardResponse": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 255,
+            "title": "Title"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "solution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Solution"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "author_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Author Id"
+          },
+          "topics": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topics"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "sharing_value_score": {
+            "type": "number",
+            "title": "Sharing Value Score"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InsightStatus"
+          },
+          "view_count": {
+            "type": "integer",
+            "title": "View Count"
+          },
+          "thanks_count": {
+            "type": "integer",
+            "title": "Thanks Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "summary",
+          "id",
+          "author_id",
+          "sharing_value_score",
+          "status",
+          "view_count",
+          "thanks_count",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "InsightCardResponse",
+        "description": "インサイトレスポンススキーマ"
+      },
+      "InsightStatus": {
+        "type": "string",
+        "enum": [
+          "draft",
+          "pending_approval",
+          "approved",
+          "rejected"
+        ],
+        "title": "InsightStatus",
+        "description": "インサイトの状態"
+      },
+      "IntentBadge": {
+        "properties": {
+          "intent": {
+            "$ref": "#/components/schemas/ConversationIntent"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "UIに表示するラベル"
+          },
+          "icon": {
+            "type": "string",
+            "title": "Icon",
+            "description": "UIに表示するアイコン識別子"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intent",
+          "confidence",
+          "label",
+          "icon"
+        ],
+        "title": "IntentBadge",
+        "description": "Intent Badge - ルーターの判定結果を可視化"
+      },
+      "LogIntent": {
+        "type": "string",
+        "enum": [
+          "log",
+          "vent",
+          "structure",
+          "state",
+          "deep_research"
+        ],
+        "title": "LogIntent",
+        "description": "ユーザーの意図分類\n- LOG: 単に記録したい\n- VENT: 愚痴を言いたい\n- STRUCTURE: 整理したい\n- STATE: コンディション・状態記録\n- DEEP_RESEARCH: AIによる能動的な調査・リサーチ"
+      },
+      "RawLogCreate": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type",
+            "default": "text"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "RawLogCreate",
+        "description": "ログ作成スキーマ"
+      },
+      "RawLogListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RawLogResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "RawLogListResponse",
+        "description": "ログリストレスポンス"
+      },
+      "RawLogResponse": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type",
+            "default": "text"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogIntent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "emotions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emotions"
+          },
+          "emotion_scores": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emotion Scores"
+          },
+          "topics": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topics"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          },
+          "metadata_analysis": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata Analysis"
+          },
+          "structural_analysis": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structural Analysis"
+          },
+          "assistant_reply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assistant Reply"
+          },
+          "is_analyzed": {
+            "type": "boolean",
+            "title": "Is Analyzed"
+          },
+          "is_processed_for_insight": {
+            "type": "boolean",
+            "title": "Is Processed For Insight"
+          },
+          "is_structure_analyzed": {
+            "type": "boolean",
+            "title": "Is Structure Analyzed",
+            "default": false
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content",
+          "id",
+          "user_id",
+          "is_analyzed",
+          "is_processed_for_insight",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RawLogResponse",
+        "description": "ログレスポンススキーマ"
+      },
+      "RecommendationItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "topics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Topics"
+          },
+          "relevance_score": {
+            "type": "integer",
+            "title": "Relevance Score"
+          },
+          "preview": {
+            "type": "string",
+            "title": "Preview"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "team_members": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/TeamMember"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Members"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "summary",
+          "topics",
+          "relevance_score",
+          "preview"
+        ],
+        "title": "RecommendationItem",
+        "description": "レコメンデーションアイテム"
+      },
+      "RecommendationRequest": {
+        "properties": {
+          "current_input": {
+            "type": "string",
+            "title": "Current Input"
+          },
+          "exclude_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclude Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_input"
+        ],
+        "title": "RecommendationRequest",
+        "description": "レコメンデーションリクエスト"
+      },
+      "RecommendationResponse": {
+        "properties": {
+          "has_recommendations": {
+            "type": "boolean",
+            "title": "Has Recommendations"
+          },
+          "recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/RecommendationItem"
+            },
+            "type": "array",
+            "title": "Recommendations"
+          },
+          "trigger_reason": {
+            "type": "string",
+            "title": "Trigger Reason"
+          },
+          "display_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "has_recommendations",
+          "recommendations",
+          "trigger_reason"
+        ],
+        "title": "RecommendationResponse",
+        "description": "レコメンデーションレスポンス"
+      },
+      "ResearchPlan": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "調査タイトル"
+          },
+          "topic": {
+            "type": "string",
+            "title": "Topic",
+            "description": "具体的な調査主題"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "description": "対象範囲（地域・年代・分野など）"
+          },
+          "perspectives": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Perspectives",
+            "description": "調査の視点・切り口"
+          },
+          "sanitized_query": {
+            "type": "string",
+            "title": "Sanitized Query",
+            "description": "個人情報を排除した検索クエリ"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "topic",
+          "scope",
+          "perspectives",
+          "sanitized_query"
+        ],
+        "title": "ResearchPlan",
+        "description": "調査計画書（Research Brief）"
+      },
+      "SharingDecision": {
+        "properties": {
+          "insight_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Insight Id"
+          },
+          "approved": {
+            "type": "boolean",
+            "title": "Approved"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          }
+        },
+        "type": "object",
+        "required": [
+          "insight_id",
+          "approved"
+        ],
+        "title": "SharingDecision",
+        "description": "共有判断スキーマ"
+      },
+      "SharingProposal": {
+        "properties": {
+          "insight": {
+            "$ref": "#/components/schemas/InsightCardResponse"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "あなたのこの経験は、チームの役に立つ可能性があります。この形式で共有しますか？"
+          },
+          "original_content_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Content Preview"
+          }
+        },
+        "type": "object",
+        "required": [
+          "insight"
+        ],
+        "title": "SharingProposal",
+        "description": "共有提案スキーマ\nSharing Broker がユーザーに提示する"
+      },
+      "TeamMember": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "display_name",
+          "role"
+        ],
+        "title": "TeamMember",
+        "description": "チーム提案メンバー"
+      },
+      "Token": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "user"
+        ],
+        "title": "Token",
+        "description": "JWTトークンレスポンス"
+      },
+      "UserCreate": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "UserCreate",
+        "description": "ユーザー作成スキーマ"
+      },
+      "UserLogin": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "UserLogin",
+        "description": "ログインリクエストスキーマ"
+      },
+      "UserResponse": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "is_verified": {
+            "type": "boolean",
+            "title": "Is Verified"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "id",
+          "is_active",
+          "is_verified",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UserResponse",
+        "description": "ユーザーレスポンススキーマ"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

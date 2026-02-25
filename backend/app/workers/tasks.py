@@ -247,6 +247,28 @@ def analyze_log_structure(self, log_id: str):
                 logger.info(f"Log already analyzed for structure: {log_id}")
                 return {"status": "skipped", "message": "Already analyzed for structure"}
 
+            # SUMMARIZE / CHAT などの作業指示・雑談インテントは構造分析をスキップする
+            # （context_analyzer や SemanticRouter が metadata_analysis に semantic_intent を保存している場合）
+            _SKIP_SEMANTIC_INTENTS = frozenset({"summarize", "chat"})
+            _stored_semantic_intent = (log.metadata_analysis or {}).get("semantic_intent", "")
+            if _stored_semantic_intent in _SKIP_SEMANTIC_INTENTS:
+                logger.info(
+                    f"Skipping structural analysis for semantic_intent={_stored_semantic_intent}: {log_id}"
+                )
+                log.structural_analysis = {
+                    "relationship_type": "NEW",
+                    "updated_structural_issue": "",
+                    "probing_question": None,
+                }
+                log.is_structure_analyzed = True
+                flag_modified(log, "structural_analysis")
+                await session.commit()
+                return {
+                    "status": "skipped",
+                    "log_id": log_id,
+                    "reason": f"semantic_intent={_stored_semantic_intent}",
+                }
+
             # 状態ログは構造分析をスキップし、マイクロフィードバックを返す
             if log.intent == LogIntent.STATE or log.intent == "state":
                 logger.info(f"Generating micro-feedback for state log: {log_id}")
@@ -526,6 +548,7 @@ def process_log_for_insight(self, log_id: str):
                     vector_id = await knowledge_store.store_insight(
                         insight_id=str(insight.id),
                         insight={
+                            "author_id": str(insight.author_id),
                             "title": insight.title,
                             "context": insight.context,
                             "problem": insight.problem,
@@ -882,6 +905,7 @@ def run_deep_research_task(
                     vector_id = await knowledge_store.store_insight(
                         insight_id=str(insight.id),
                         insight={
+                            "author_id": str(insight.author_id),
                             "title": insight.title,
                             "context": insight.context,
                             "problem": insight.problem,
