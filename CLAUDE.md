@@ -27,6 +27,14 @@
 `.claude/skills/plura-self-optimization.md` を参照すること。
 ```
 
+### Policy Weaver（ルール抽出・制度化・TTL設計）
+Policy Weaver の実装・修正時は `.claude/skills/plura-policy-weaver.md` を参照すること。
+ルールの抽出・制度化・TTL設計に関する制約（二段階制度化、TTL必須、Override歓迎）が定義されている。
+
+### 非同期タスク（Celery キュー分離）
+非同期タスクを実装する際は `.claude/skills/plura-async-architecture.md` を参照すること。
+`fast_queue` / `heavy_queue` の分離原則が定義されている。Policy Weaverは `heavy_queue` 必須。
+
 ### 3. 確認
 
 Claude Code で以下のように指示して、スキルが認識されることを確認：
@@ -64,6 +72,22 @@ PII除去率・文脈維持率・自然さの3軸で採点するように。
 ```
 IntentRouter の失敗ケースを分析して改善案を出して。
 SKILL.md の Section 5 の prompt_optimizer パターンで。
+```
+
+### Phase 4: Policy Weaverの評価実装
+
+```
+Policy WeaverのGolden Datasetを作成して。
+ジレンマと境界条件が抽出できているかを評価軸にして。
+plura-policy-weaver.md の golden_dataset イメージに従い、
+dilemma_context と expected_policy_structure を含む形式で。
+```
+
+```
+PolicyEvaluator を実装して。
+plura-policy-weaver.md の評価軸（heuristic_compliance / boundary_clarity / ttl_appropriateness）を使って、
+plura-self-optimization.md の BaseEvaluator を継承し3軸採点するように。
+Celeryタスクのテストは plura-self-optimization.md §3.3 末尾の非同期タスクテスト指針に従うこと。
 ```
 
 ---

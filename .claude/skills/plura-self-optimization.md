@@ -37,6 +37,7 @@ SituationRouter       StructuralAnalyzer
 | `SharingBroker` | `services/layer2/sharing_broker.py` | スコアリング妥当性, 閾値判定精度 | BALANCED |
 | `StructuralAnalyzer` | `services/layer2/structural_analyzer.py` | 関係性判定, probing_question品質 | DEEP |
 | `SerendipityMatcher` | `services/layer3/serendipity_matcher.py` | チーム補完性, Synergy Score | BALANCED |
+| `PolicyWeaver` | `services/layer3/policy_weaver.py` | ルールの柔軟性(Heuristic), 境界条件の明確さ | HEAVY (Celery heavy_queue) |
 
 ---
 
@@ -267,6 +268,36 @@ def _has_llm_key():
     from app.core.config import settings
     return settings.is_openai_available() or settings.is_google_genai_available()
 ```
+
+#### 【補足】Celeryタスクの単体テスト
+
+`PolicyWeaver` のように `heavy_queue` で動作する Celery タスクをテストする際は、以下の方針に従う。
+
+```python
+# Celeryタスクを同期的にテストする2つのアプローチ
+
+# ① タスク関数のコアロジックを直接呼び出す（推奨）
+#    Celeryのデコレータを経由せず、内部の async 関数を直接テスト
+async def test_policy_weaver_core_logic():
+    from app.services.layer3.policy_weaver import policy_weaver
+    # Celeryタスクではなく、サービスのメソッドを直接呼び出す
+    result = await policy_weaver.extract_policy(dilemma_context="...")
+    assert result["enforcement_level"] in ("suggest", "warn")
+
+# ② Celeryワーカー全体をモックする（結合テスト向け）
+from unittest.mock import patch, MagicMock
+
+def test_policy_weaver_task_dispatch():
+    with patch("app.tasks.policy_tasks.extract_policy_task.apply_async") as mock_task:
+        mock_task.return_value = MagicMock(id="test-task-id")
+        # タスクのディスパッチ部分のみ検証
+        from app.tasks.policy_tasks import dispatch_policy_extraction
+        task_id = dispatch_policy_extraction(note_id=123)
+        mock_task.assert_called_once()
+        assert task_id == "test-task-id"
+```
+
+**注意:** `CELERY_TASK_ALWAYS_EAGER = True` は非推奨。代わりに上記①のようにコアロジックを直接テストすること。
 
 ### 3.4 共通フィクスチャ（conftest.py）
 
