@@ -1,0 +1,559 @@
+{
+  "component": "PolicyWeaver",
+  "version": "1.0",
+  "description": "PolicyWeaver のポリシー抽出テストケース。3つの評価軸（heuristic_compliance, boundary_clarity, ttl_appropriateness）でジレンマ抽出・境界条件・TTL設定を検証する。",
+  "cases": [
+    {
+      "id": "PW-001",
+      "input": {
+        "logs": [
+          "パフォーマンスと開発速度のトレードオフで悩んだ。最終的にDjangoを選択した。初期フェーズでは開発速度を優先し、スケール要件が明確になった時点でマイクロサービス化を検討することにした。",
+          "同時接続1万超えの要件が出てきたらFastAPIへの移行を開始する方針。"
+        ],
+        "project_context": "社内SaaSプロダクトの新規開発（チーム5人）"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["Django", "開発速度"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "tech_selection", "framework"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PW-002",
+      "input": {
+        "logs": [
+          "セキュリティ要件が厳しく、外部APIへの直接通信を禁止した。すべてのリクエストをプロキシサーバー経由にすることでデータ漏洩リスクを低減した。",
+          "ただし開発用のローカル環境ではプロキシを省略可能にした。本番と同一の環境にすると開発効率が著しく低下するため。"
+        ],
+        "project_context": "金融系クライアント向けのAPI開発"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["プロキシ", "セキュリティ"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "security", "nfr"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PW-003",
+      "input": {
+        "logs": [
+          "DBの一貫性 vs レスポンス速度で議論した。結果的にEventual Consistencyを採用し、ユーザーには更新後の即時反映を保証しないことにした。",
+          "決済関連のデータだけはStrong Consistencyを維持する例外ルールを設けた。"
+        ],
+        "project_context": "ECプラットフォーム開発"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["Consistency", "一貫性"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "data_consistency", "nfr"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PW-004",
+      "input": {
+        "logs": [
+          "ログ出力量とストレージコストのバランスで悩んだ。本番環境ではWARN以上のみ出力し、DEBUGレベルは開発環境のみに限定。",
+          "ただしインシデント調査時にはDEBUGログが必要になるため、動的にログレベルを変更できるAPIを用意した。"
+        ],
+        "project_context": "マイクロサービス基盤のログ戦略策定"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["ログ"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "observability", "nfr"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PW-005",
+      "input": {
+        "logs": [
+          "UIの利便性とアクセシビリティの衝突。ドラッグ&ドロップのリッチUIをメインにしたが、スクリーンリーダー対応が困難。代替として完全にキーボード操作可能なフォームベースUIを並行提供する方針にした。",
+          "リッチUIとアクセシブルUIの機能パリティを常に維持するルールを設定。"
+        ],
+        "project_context": "BtoBダッシュボードアプリ開発"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["アクセシビリティ", "UI"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 0
+      },
+      "tags": ["dilemma", "accessibility", "ux"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PW-006",
+      "input": {
+        "logs": [
+          "テストカバレッジ100%を目指すか議論した。最終的に「ビジネスロジック層は80%以上、UI層は統合テストで補完」という方針にした。",
+          "ただしCIで80%未満のPRはマージブロックする設定にはせず、レビュー時にコメントで指摘するソフトな運用にした。理由は、初期フェーズでの開発速度を落としたくなかったため。"
+        ],
+        "project_context": "スタートアップの初期プロダクト開発"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["テスト", "カバレッジ"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "testing", "ci_cd"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PW-007",
+      "input": {
+        "logs": [
+          "モノレポかマルチレポかで激論。チーム間の依存関係管理を考慮してモノレポを採用。ただしチーム数が10を超えたらビルド時間の問題が深刻化するため、その時点でドメイン単位のマルチレポへの移行を計画。",
+          "移行判断基準: CIビルド時間が15分を超えた場合、またはチーム数が10を超えた場合。"
+        ],
+        "project_context": "エンタープライズ向けSaaS開発"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 2,
+        "expected_principle_keywords": ["モノレポ"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "architecture", "repo_strategy"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PW-008",
+      "input": {
+        "logs": [
+          "リリース頻度について。週次リリースを基本とし、ホットフィックスのみ随時リリースとする運用にした。デイリーリリースも検討したが、QAリソースが足りない現状では品質リスクが高い。",
+          "QAチームが3人以上になった段階でデイリーリリースへの移行を検討する。"
+        ],
+        "project_context": "Webアプリケーションの運用チーム"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 2,
+        "expected_principle_keywords": ["リリース"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "release", "process"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PW-009",
+      "input": {
+        "logs": [
+          "TypeScriptの型安全性とJavaScriptの柔軟性で悩んだ。結果的にAPIレイヤーとビジネスロジック層はTypeScript strict mode、フロントのコンポーネント層は一部anyを許容する方針にした。",
+          "ライブラリの型定義が不完全な場合のみas unknownを経由した型アサーションを許可。"
+        ],
+        "project_context": "フルスタックWebアプリケーション"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["TypeScript", "型"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["boundary", "type_safety", "language"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PW-010",
+      "input": {
+        "logs": [
+          "キャッシュ戦略でRedisかインメモリかで議論。応答時間は10ms以内に収めたい。インメモリキャッシュはノード間の整合性問題がある。結局Redisに統一し、ホットデータのみアプリケーションレベルのL1キャッシュを導入。",
+          "キャッシュのTTLはデータ種別ごとに設定: ユーザープロファイル=5分、マスタデータ=1時間、セッション=30分。",
+          "キャッシュ破棄はPub/Subで全ノードに通知する。"
+        ],
+        "project_context": "高トラフィックAPI基盤"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["キャッシュ", "Redis"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 0
+      },
+      "tags": ["boundary", "caching", "performance"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PW-011",
+      "input": {
+        "logs": [
+          "エラーハンドリング方針を統一した。外部API呼び出しは全てリトライ3回+エクスポネンシャルバックオフ。ただしユーザー入力エラー(4xx系)はリトライせず即座にエラーレスポンスを返す。",
+          "サーキットブレーカーの閾値は失敗率50%、復帰試行は30秒後。"
+        ],
+        "project_context": "外部API連携が多いバックエンドシステム"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["リトライ", "エラー"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["boundary", "error_handling", "resilience"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PW-012",
+      "input": {
+        "logs": [
+          "依存ライブラリの更新ポリシー: セキュリティパッチは72時間以内に適用、メジャーバージョンアップは四半期レビューで判断。マイナーバージョンは月次で自動更新（Dependabotに任せる）。",
+          "ただし、破壊的変更を含むメジャーアップデートは必ずステージング環境で1週間検証後に本番適用。"
+        ],
+        "project_context": "長期運用のWebサービス"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["ライブラリ", "更新"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["boundary", "dependency", "maintenance"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "PW-013",
+      "input": {
+        "logs": [
+          "認証方式をJWTにするかセッションベースにするか。SPAなのでJWTを採用。ただしトークンの有効期限はアクセストークン15分、リフレッシュトークン7日。",
+          "管理者画面はセッションベースを維持。理由はIPアドレス制限と組み合わせたいため。"
+        ],
+        "project_context": "BtoC Webサービスと管理者画面"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["JWT", "認証"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["ttl", "authentication", "security"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PW-014",
+      "input": {
+        "logs": [
+          "マイクロサービス間の通信プロトコル。REST vs gRPC。内部サービス間はgRPCで統一し、外部公開APIのみRESTにする方針にした。",
+          "ただし、チーム内にgRPCの経験者が少ないため、最初の3ヶ月は主要5サービスのみgRPC化し、残りは徐々に移行する。"
+        ],
+        "project_context": "マイクロサービスアーキテクチャ移行プロジェクト"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["gRPC", "REST"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["ttl", "protocol", "migration"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PW-015",
+      "input": {
+        "logs": [
+          "コードレビュー運用: 全PRに最低1人のレビューを必須とする。ただし緊急ホットフィックスのみpost-mergeレビューを許容する。",
+          "この例外ルールは3ヶ月後に見直し、乱用されていないか確認する。"
+        ],
+        "project_context": "チーム開発のワークフロー整備"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 2,
+        "expected_principle_keywords": ["レビュー"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["ttl", "code_review", "process"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PW-016",
+      "input": {
+        "logs": [
+          "データ保持期間のポリシー。ユーザーの行動ログは90日で自動削除、集約済み統計データは2年保持。GDPR対応で削除リクエストがあれば7日以内に完全削除する。",
+          "このポリシーは年次で見直す。法改正がある場合は即座に再評価する。"
+        ],
+        "project_context": "グローバル展開のWebサービス"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["データ保持", "削除"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["ttl", "data_retention", "compliance"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "PW-017",
+      "input": {
+        "logs": [
+          "おはようございます。今日のスタンドアップは10時からです。",
+          "了解です。昨日のタスクは完了しました。",
+          "お昼ご飯何にする？",
+          "カレーかなー"
+        ],
+        "project_context": "チャットルームの雑談"
+      },
+      "expected": {
+        "has_policies": false,
+        "min_policies": 0,
+        "max_policies": 0,
+        "expected_principle_keywords": [],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": false,
+        "expected_applies_when_count": 0,
+        "expected_except_when_count": 0
+      },
+      "tags": ["no_policy", "chat", "noise"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PW-018",
+      "input": {
+        "logs": [
+          "進捗報告: フロントエンドの画面A実装完了。画面Bは明日着手予定。",
+          "バックエンドAPIのエンドポイント3つ実装済み。残り2つ。",
+          "テスト環境へのデプロイ完了しました。"
+        ],
+        "project_context": "週次進捗ミーティング"
+      },
+      "expected": {
+        "has_policies": false,
+        "min_policies": 0,
+        "max_policies": 0,
+        "expected_principle_keywords": [],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": false,
+        "expected_applies_when_count": 0,
+        "expected_except_when_count": 0
+      },
+      "tags": ["no_policy", "progress_report"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PW-019",
+      "input": {
+        "logs": [
+          "テスト"
+        ],
+        "project_context": null
+      },
+      "expected": {
+        "has_policies": false,
+        "min_policies": 0,
+        "max_policies": 0,
+        "expected_principle_keywords": [],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": false,
+        "expected_applies_when_count": 0,
+        "expected_except_when_count": 0
+      },
+      "tags": ["no_policy", "short_input"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PW-020",
+      "input": {
+        "logs": [],
+        "project_context": null
+      },
+      "expected": {
+        "has_policies": false,
+        "min_policies": 0,
+        "max_policies": 0,
+        "expected_principle_keywords": [],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": false,
+        "expected_applies_when_count": 0,
+        "expected_except_when_count": 0
+      },
+      "tags": ["no_policy", "empty_input"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PW-021",
+      "input": {
+        "logs": [
+          "インフラのIaC化でTerraformかPulumiかCDKか。チームのTypeScript統一方針に合わせてCDKを採用。ただしマルチクラウド展開が決まった場合はTerraformへの移行を検討する。",
+          "CDKのバージョンは半年ごとにメジャーバージョンを追従する方針。"
+        ],
+        "project_context": "AWSベースのインフラ構築"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["CDK", "IaC"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "infrastructure", "iac"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PW-022",
+      "input": {
+        "logs": [
+          "データパイプラインの設計で、リアルタイム処理かバッチ処理かで議論。現状のデータ量ならバッチで十分だが、将来的にリアルタイム要件が出る可能性がある。",
+          "結論: 現時点ではバッチ処理（Airflow）を採用し、データ量が1日100GB超えたらKafka+Flinkへ移行する。移行コストを最小化するため、パイプラインのインターフェースだけは統一しておく。",
+          "この判断は半年後に再評価。ビジネスサイドのリアルタイムダッシュボード要件が確定した時点でも再評価トリガーとする。"
+        ],
+        "project_context": "データ基盤構築プロジェクト"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["バッチ", "パイプライン"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "data_pipeline", "scalability"],
+      "difficulty": "hard"
+    },
+    {
+      "id": "PW-023",
+      "input": {
+        "logs": [
+          "コンテナオーケストレーションでKubernetesを使うかECS/Fargateで十分か議論。Kubernetesは運用負荷が高いが柔軟性が高い。チーム規模が小さいためECS Fargateを採用。",
+          "ただしサービス数が20を超えた場合やマルチクラウドの要件が出た場合はEKSへの移行を検討する。"
+        ],
+        "project_context": "コンテナ基盤の設計"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 2,
+        "expected_principle_keywords": ["ECS", "Fargate"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "infrastructure", "containers"],
+      "difficulty": "medium"
+    },
+    {
+      "id": "PW-024",
+      "input": {
+        "logs": [
+          "API設計でGraphQLとRESTの選択。管理画面のような複雑なデータ取得が多い画面はGraphQLが適しているが、チーム内の学習コストを考慮してRESTを基本方針とした。",
+          "ただし、BFFレイヤーの実装でクエリの柔軟性が必要になった場合はGraphQLの部分導入を許可する。"
+        ],
+        "project_context": "API基盤の設計標準策定"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 2,
+        "expected_principle_keywords": ["REST", "GraphQL"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "api_design"],
+      "difficulty": "easy"
+    },
+    {
+      "id": "PW-025",
+      "input": {
+        "logs": [
+          "フィーチャーフラグの運用方針を決めた。新機能は必ずフィーチャーフラグで制御し、全社展開前にカナリアリリースで10%のユーザーに先行公開する。",
+          "フラグの寿命は最長2ヶ月。2ヶ月以内に全展開するか撤回するかを判断し、死んだフラグは残さない。",
+          "ただし外部規制（法令対応など）に関連するフラグは規制施行日まで保持可能とする。"
+        ],
+        "project_context": "SaaSプロダクトのリリース運用"
+      },
+      "expected": {
+        "has_policies": true,
+        "min_policies": 1,
+        "max_policies": 3,
+        "expected_principle_keywords": ["フィーチャーフラグ"],
+        "enforcement_level": "suggest",
+        "boundary_conditions_defined": true,
+        "expected_applies_when_count": 1,
+        "expected_except_when_count": 1
+      },
+      "tags": ["dilemma", "feature_flag", "release"],
+      "difficulty": "hard"
+    }
+  ]
+}

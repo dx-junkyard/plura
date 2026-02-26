@@ -49,6 +49,10 @@ EVALUATOR_MAP: Dict[str, Tuple[str, str]] = {
         "tests.evaluators.serendipity_evaluator",
         "SerendipityEvaluator",
     ),
+    "policy_weaver": (
+        "tests.evaluators.policy_evaluator",
+        "PolicyEvaluator",
+    ),
 }
 
 GOLDEN_DIR = Path(__file__).parent.parent / "golden_datasets"
