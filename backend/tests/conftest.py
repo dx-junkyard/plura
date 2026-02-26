@@ -194,6 +194,47 @@ SYNERGY_PRESETS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+# --- Layer 3: PolicyWeaver ---
+POLICY_PRESETS: Dict[str, Dict[str, Any]] = {
+    "tech_tradeoff": {
+        "policies": [
+            {
+                "dilemma_context": "パフォーマンスと開発速度のトレードオフで、初期フェーズではモノリシックフレームワークを選択するか、マイクロサービスで始めるかの判断が必要だった。",
+                "principle": "初期フェーズはDjangoを選択し、スケール要件が明確になった時点でマイクロサービス化を検討する",
+                "boundary_conditions": {
+                    "applies_when": [
+                        "初期フェーズのプロダクト開発時",
+                        "チーム規模が5人以下の場合",
+                    ],
+                    "except_when": [
+                        "同時接続数が1万を超えることが確定している場合",
+                    ],
+                },
+            }
+        ]
+    },
+    "security_proxy": {
+        "policies": [
+            {
+                "dilemma_context": "セキュリティ要件と開発効率のバランス。本番環境のセキュリティを確保しつつ、開発環境では効率的に作業できる構成が求められた。",
+                "principle": "外部APIへの通信はプロキシサーバー経由を原則とし、開発環境のみプロキシ省略を許可する",
+                "boundary_conditions": {
+                    "applies_when": [
+                        "本番環境での外部API通信時",
+                        "ステージング環境でのテスト実行時",
+                    ],
+                    "except_when": [
+                        "ローカル開発環境での動作確認時",
+                    ],
+                },
+            }
+        ]
+    },
+    "no_policy": {
+        "policies": []
+    },
+}
+
 
 # =============================================================================
 # フィクスチャ: MockLLMProvider ファクトリー
@@ -212,6 +253,7 @@ def make_mock_provider():
         "intent": INTENT_PRESETS,
         "sanitizer": SANITIZER_PRESETS,
         "synergy": SYNERGY_PRESETS,
+        "policy": POLICY_PRESETS,
     }
 
     def _factory(preset_key: str, preset_type: str = "intent") -> MockLLMProvider:
@@ -251,3 +293,12 @@ def serendipity_matcher_with_llm(make_mock_provider):
     matcher = SerendipityMatcher()
     matcher._llm_provider = make_mock_provider("team_found", "synergy")
     return matcher
+
+
+@pytest.fixture
+def policy_weaver_with_llm(make_mock_provider):
+    """LLM が tech_tradeoff にプリセットされた PolicyWeaver インスタンス"""
+    from app.services.layer3.policy_weaver import PolicyWeaver
+    weaver = PolicyWeaver()
+    weaver._provider = make_mock_provider("tech_tradeoff", "policy")
+    return weaver

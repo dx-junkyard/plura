@@ -568,3 +568,260 @@ class TestSerendipityEvaluator:
         }
         scores, reason = evaluator._rule_based_check(input_data, output, expected)
         assert scores["team_formation"] == 2.0
+
+
+# ================================================================
+# PolicyEvaluator テスト
+# ================================================================
+
+class TestPolicyEvaluator:
+    """PolicyEvaluator のルールベース評価テスト"""
+
+    @pytest.fixture
+    def evaluator(self):
+        from tests.evaluators.policy_evaluator import PolicyEvaluator
+        return PolicyEvaluator()
+
+    def test_scoring_dimensions(self, evaluator):
+        dims = evaluator.scoring_dimensions
+        assert len(dims) == 3
+        names = [d["name"] for d in dims]
+        assert "heuristic_compliance" in names
+        assert "boundary_clarity" in names
+        assert "ttl_appropriateness" in names
+
+    def test_rule_based_policies_extracted_correctly(self, evaluator):
+        """ポリシーが正しく抽出された場合、高スコア"""
+        input_data = {
+            "logs": ["パフォーマンスと開発速度のトレードオフで悩んだ"],
+            "project_context": "社内SaaS",
+        }
+        output = {
+            "policy_count": 1,
+            "policies": [{
+                "dilemma_context": "パフォーマンスと開発速度のトレードオフで、初期フェーズではモノリシックフレームワークを選択するか判断が必要だった。",
+                "principle": "初期フェーズはDjangoを選択し、スケール要件が明確になった時点でマイクロサービス化を検討する",
+                "boundary_conditions": {
+                    "applies_when": ["初期フェーズのプロダクト開発時", "チーム規模が5人以下の場合"],
+                    "except_when": ["同時接続数が1万を超えることが確定している場合"],
+                },
+            }],
+        }
+        expected = {
+            "has_policies": True,
+            "min_policies": 1,
+            "max_policies": 3,
+            "expected_principle_keywords": ["Django"],
+            "enforcement_level": "suggest",
+            "boundary_conditions_defined": True,
+            "expected_applies_when_count": 1,
+            "expected_except_when_count": 1,
+        }
+        scores, reason = evaluator._rule_based_check(input_data, output, expected)
+        assert scores["heuristic_compliance"] >= 8.0
+        assert scores["boundary_clarity"] >= 7.0
+        assert scores["ttl_appropriateness"] >= 7.0
+
+    def test_rule_based_no_policy_expected_and_empty(self, evaluator):
+        """ポリシー不要で正しく空の場合、全軸10点"""
+        input_data = {"logs": ["おはよう"], "project_context": None}
+        output = {"policy_count": 0, "policies": []}
+        expected = {
+            "has_policies": False,
+            "min_policies": 0,
+            "max_policies": 0,
+            "expected_principle_keywords": [],
+            "enforcement_level": "suggest",
+            "boundary_conditions_defined": False,
+            "expected_applies_when_count": 0,
+            "expected_except_when_count": 0,
+        }
+        scores, reason = evaluator._rule_based_check(input_data, output, expected)
+        assert scores["heuristic_compliance"] == 10.0
+        assert scores["boundary_clarity"] == 10.0
+        assert scores["ttl_appropriateness"] == 10.0
+
+    def test_rule_based_expected_policy_but_empty(self, evaluator):
+        """ポリシーがあるべきなのに空の場合、全軸低スコア"""
+        input_data = {"logs": ["技術選定のトレードオフ"], "project_context": None}
+        output = {"policy_count": 0, "policies": []}
+        expected = {
+            "has_policies": True,
+            "min_policies": 1,
+            "max_policies": 3,
+        }
+        scores, reason = evaluator._rule_based_check(input_data, output, expected)
+        assert scores["heuristic_compliance"] <= 3.0
+        assert scores["boundary_clarity"] <= 3.0
+        assert scores["ttl_appropriateness"] <= 3.0
+
+    def test_rule_based_unexpected_policy_extracted(self, evaluator):
+        """ポリシー不要なのに抽出された場合、低スコア"""
+        input_data = {"logs": ["おはよう"], "project_context": None}
+        output = {
+            "policy_count": 1,
+            "policies": [{
+                "dilemma_context": "不要なポリシー",
+                "principle": "不要なルール",
+                "boundary_conditions": {
+                    "applies_when": [],
+                    "except_when": [],
+                },
+            }],
+        }
+        expected = {
+            "has_policies": False,
+            "min_policies": 0,
+            "max_policies": 0,
+        }
+        scores, reason = evaluator._rule_based_check(input_data, output, expected)
+        assert scores["heuristic_compliance"] <= 4.0
+        assert "不要" in reason
+
+    def test_rule_based_block_language_detected(self, evaluator):
+        """BLOCK的な記述がある場合、heuristic_compliance が下がる"""
+        input_data = {"logs": ["ルール策定"], "project_context": None}
+        output = {
+            "policy_count": 1,
+            "policies": [{
+                "dilemma_context": "セキュリティ上の理由から外部通信を禁止する必要がある",
+                "principle": "外部APIへの直接通信は絶対にしないこと",
+                "boundary_conditions": {
+                    "applies_when": ["本番環境"],
+                    "except_when": [],
+                },
+            }],
+        }
+        expected = {
+            "has_policies": True,
+            "min_policies": 1,
+            "max_policies": 3,
+            "expected_except_when_count": 0,
+        }
+        scores, reason = evaluator._rule_based_check(input_data, output, expected)
+        assert scores["heuristic_compliance"] <= 5.0
+
+    def test_rule_based_empty_boundary_conditions(self, evaluator):
+        """applies_when が空の場合、boundary_clarity が低い"""
+        input_data = {"logs": ["テスト"], "project_context": None}
+        output = {
+            "policy_count": 1,
+            "policies": [{
+                "dilemma_context": "短い",
+                "principle": "ルール",
+                "boundary_conditions": {
+                    "applies_when": [],
+                    "except_when": [],
+                },
+            }],
+        }
+        expected = {
+            "has_policies": True,
+            "min_policies": 1,
+            "max_policies": 3,
+            "expected_applies_when_count": 1,
+            "expected_except_when_count": 0,
+        }
+        scores, reason = evaluator._rule_based_check(input_data, output, expected)
+        assert scores["boundary_clarity"] < 6.0
+
+    def test_rule_based_perpetual_language_detected(self, evaluator):
+        """永続的ルールの示唆がある場合、ttl_appropriateness が下がる"""
+        input_data = {"logs": ["テスト"], "project_context": None}
+        output = {
+            "policy_count": 1,
+            "policies": [{
+                "dilemma_context": "永久に変更不可のルールとして定めた",
+                "principle": "恒久的にこのルールを適用する",
+                "boundary_conditions": {
+                    "applies_when": ["全プロジェクト"],
+                    "except_when": [],
+                },
+            }],
+        }
+        expected = {
+            "has_policies": True,
+            "min_policies": 1,
+            "max_policies": 3,
+            "expected_except_when_count": 0,
+        }
+        scores, reason = evaluator._rule_based_check(input_data, output, expected)
+        assert scores["ttl_appropriateness"] <= 4.0
+
+    def test_rule_based_review_mention_bonus(self, evaluator):
+        """再評価の言及がある場合、ttl_appropriateness にボーナス"""
+        input_data = {"logs": ["テスト"], "project_context": None}
+        output = {
+            "policy_count": 1,
+            "policies": [{
+                "dilemma_context": "3ヶ月後に見直しを行う前提で決定した",
+                "principle": "初期フェーズでは簡易方式を採用する",
+                "boundary_conditions": {
+                    "applies_when": ["初期フェーズ"],
+                    "except_when": [],
+                },
+            }],
+        }
+        expected = {
+            "has_policies": True,
+            "min_policies": 1,
+            "max_policies": 3,
+            "expected_except_when_count": 0,
+        }
+        scores, reason = evaluator._rule_based_check(input_data, output, expected)
+        assert scores["ttl_appropriateness"] >= 8.0
+
+    def test_build_judge_prompt(self, evaluator):
+        prompt = evaluator.build_judge_prompt(
+            input_data={
+                "logs": ["テストログ"],
+                "project_context": "テストプロジェクト",
+            },
+            output={
+                "policies": [{
+                    "dilemma_context": "テストジレンマ",
+                    "principle": "テストルール",
+                    "boundary_conditions": {
+                        "applies_when": ["条件A"],
+                        "except_when": ["例外B"],
+                    },
+                }],
+                "policy_count": 1,
+            },
+            expected={
+                "has_policies": True,
+                "expected_principle_keywords": ["テスト"],
+            },
+        )
+        assert "テストログ" in prompt
+        assert "テストプロジェクト" in prompt
+        assert "テストジレンマ" in prompt
+        assert "テストルール" in prompt
+        assert "条件A" in prompt
+        assert "例外B" in prompt
+
+    def test_build_judge_prompt_empty_policies(self, evaluator):
+        prompt = evaluator.build_judge_prompt(
+            input_data={"logs": ["雑談"], "project_context": None},
+            output={"policies": [], "policy_count": 0},
+            expected={"has_policies": False},
+        )
+        assert "ポリシーなし" in prompt
+
+    async def test_run_component(self, evaluator, make_mock_provider):
+        """MockLLMProvider を使ったコンポーネント実行"""
+        weaver = evaluator._get_weaver()
+        mock_provider = make_mock_provider("tech_tradeoff", "policy")
+        with patch(
+            "app.services.layer3.policy_weaver.llm_manager"
+        ) as mock_manager:
+            mock_manager.get_client.return_value = mock_provider
+
+            result = await evaluator.run_component({
+                "logs": ["技術選定ログ"],
+                "project_context": "テスト",
+            })
+
+        assert "policies" in result
+        assert "policy_count" in result
+        assert result["policy_count"] == 1
