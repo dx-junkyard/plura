@@ -24,7 +24,15 @@
 
 ### Self-Optimization（テスト・評価・プロンプト最適化）
 テスト追加、Golden Dataset 構築、LLM-as-a-Judge 評価、プロンプト改善時は
-`.claude/skills/plura-self-optimization.md` を参照すること。
+`.claude/skills/plura-self-optimization/SKILL.md` を参照すること。
+
+### Policy Weaver（ポリシーモデル設計・実装・評価）
+Policy Weaver関連のデータモデル設計、ポリシー判定ロジック実装、TTL管理、Override記録の実装時は
+`.claude/skills/plura-policy-weaver/SKILL.md` を参照すること。
+
+### Async Architecture（非同期タスク・Celery設計）
+新規Celeryタスク追加、LLM呼び出しの非同期化、バックグラウンド処理の設計・実装時は
+`.claude/skills/plura-async-architecture/SKILL.md` を参照すること。
 ```
 
 ### 3. 確認
@@ -64,6 +72,13 @@ PII除去率・文脈維持率・自然さの3軸で採点するように。
 ```
 IntentRouter の失敗ケースを分析して改善案を出して。
 SKILL.md の Section 5 の prompt_optimizer パターンで。
+```
+
+### Phase 4: Policy Weaverの評価実装
+
+```
+PolicyWeaver の Golden Dataset を作成して。
+plura-policy-weaver スキルに定義されている3つの評価軸（ジレンマ、境界条件、TTL）で評価できるようにして。
 ```
 
 ---
